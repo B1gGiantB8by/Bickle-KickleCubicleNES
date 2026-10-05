@@ -1,0 +1,153 @@
+# Accuracy program — phased plan (Option B → external oracle → dot-accurate PPU)
+
+> Created 2026-06-28. Bail-safe roadmap: **each phase ends with a git checkpoint
+> commit on `accuracy/nes-burndown` (the `_acc/nesrecomp` engine repo)** so we can
+> abandon a phase and revert cleanly. ROMs are NEVER committed. The harness dirs
+> (`_acc/{BlarggTest,LegendOfZeldaNESRecomp,Megaman3NESRecomp}`), `F:/Projects/nesref/`,
+> and `_acc/audio_slice/` are reproducible dev tooling OUTSIDE the engine repo.
+>
+> Why this order: the input/desync blocker is already SOLVED (RNG-seed freeze), so none
+> of these are input-gated — they're effort-gated engine work. Option B is the most
+> self-contained; oracle validation precedes the dot-PPU; dot-PPU is the biggest
+> rewrite and goes last.
+
+## Phase 0 — Baseline checkpoint (do FIRST)
+
+The entire current session (IRQ delivery hook + cycle-driven frame IRQ, open-bus,
+RNG-freeze, nesref, cross-title harnesses, cycle/state/framebuf measurements, docs) is
+**uncommitted**. Commit it as the bail-out baseline BEFORE starting Phase 1.
+
+- Engine repo `_acc/nesrecomp`: `runtime.c`, `apu.c`, `apu.h`, `main_runner.c`,
+  `NES_ACCURACY_BURNDOWN.md`, `ACCURACY_PHASE_PLAN.md`, `IRQ_SLICE_002.md`(if moved in).
+- Commit message: the IRQ hook + open-bus + cross-title results. Branch only; do NOT
+  mirror to master / merge to main (end-of-stream step, owner's call).
+- Tooling outside the repo (nesref, harnesses, audio_slice scripts) — left untracked
+  (reproducible); optionally archive separately. ROMs excluded.
+
+## Phase 1 — Option B: sample-accurate APU  (most self-contained)
+
+**Goal.** Rewrite the APU timing core so `apu_clock_cycles()` is the single engine that
+advances the frame sequencer + ALL channel timers + DMC AND emits audio samples into a
+ring buffer at the output rate (band-limited integration per output sample). Replaces the
+per-frame batched `apu_generate(frame,735)`; intra-frame envelope/sweep/length/DMC land at
+their true sub-frame times.
+
+**Approach.**
+1. Move all channel timers + envelope/length/sweep + DMC reader onto the CPU-cycle stream
+   (extend the existing `apu_clock_cycles`, which already drives the frame IRQ).
+2. Generate audio incrementally: accumulate fractional output-sample position; emit one
+   band-limited sample (oversample + box/sinc decimate, preserving the tuned nonlinear DAC)
+   per `CPU_FREQ/SAMPLE_RATE` cycles into a ring; `main_runner` drains the ring to SDL.
+3. Remove the qf/half + channel clocking from `apu_generate` (now audio-render only, or
+   retire it).
+
+**Validation.** Re-run the audio suite vs the oracle: `apu_stream_diff.py` (reg-stream must
+stay bit-identical), `audio_drift_diff.py` (onset/timbre — must stay ≈ L1 0.083, no pitch/
+drift regression), `compare_*.json`. Cross-check SMB title music + a Zelda/MM3 segment.
+Also re-confirm the frame-IRQ (irq-002, recomp 599 vs 598) still holds.
+
+**Risk / bail.** Audio level/pitch/drift regression is the main risk. BAIL CRITERIA: if
+timbre L1 worsens > ~0.12 or onset match drops < ~0.9 and can't be recovered in-phase →
+`git reset --hard` to the Phase-0 checkpoint. **Checkpoint:** commit `apu.c`/`apu.h`/
+`main_runner.c` + an `AUDIO_SLICE_004.md` writeup once verified.
+
+## Phase 2 — External Mesen oracle (cycle + PPU-mem)
+
+The proposed embedded source-core path was evaluated and dropped. The standalone
+`nesref`/Mesen tooling now supplies RAM, cycle, PPU-memory, video, and audio comparison
+without linking an emulator into game builds. See `COSIM.md` for the maintained workflow.
+
+## STATUS (2026-06-29)
+- **Phase 0 DONE** — baseline commit `a8e5141` (IRQ hook + cycle-driven frame IRQ + open-bus).
+- **Phase 1 DONE** — Option B sample-accurate APU, commit `6d3ea43` (audio no-regression, self-diff 0.057). See AUDIO_SLICE_004.md.
+- **Phase 2 DONE / RESCOPED** — path-C source embedding was dropped. Standalone
+  `nesref`/Mesen supplies cycle and PPU-memory traces. Cross-title cycle work and SMB
+  PPU-memory comparison are complete; see `COSIM.md`.
+- **Phase 3 — Increment 1 DONE (per-scanline parity)** — cycle-driven per-scanline PPU
+  behind `NESRECOMP_DOT_PPU` (default OFF, byte-identical when off). New `runner/src/ppu_dot.c`
+  + `runner/include/ppu_dot.h`; hooks in `runtime.c` (per-instruction `ppu_dot_advance`, $2002
+  sprite-0 fallback) and `main_runner.c` (`ppu_dot_frame_boundary`, skip per-frame render).
+  Model: dot clock slaved to the frame driver's `s_ops_count` with a fixed VBlank phase offset
+  (cycle 0 = scanline 241; visible scanline 0 at +21 lines); free-runs through the NMI handler
+  (so the in-NMI sprite-0 split renders correctly); back-buffer + copy-at-boundary (no tearing);
+  sprite-0/overflow cleared at the pre-render line; MMC3 A12 IRQ fired per scanline from the dot
+  clock. VALIDATED vs the per-frame renderer (which is already oracle-validated): SMB title
+  byte-exact (1.0) + gameplay HUD sprite-0 split correct + 3000f 0 misses; Zelda title 0.9924
+  (animated-title baseline + 1-frame pipeline offset) + 2000f 0 misses; MM3 six attract frames
+  byte-exact (1.0) incl. the MMC3-IRQ MEGA-MAN-III colour-band logo + 1500f 0 misses.
+  Forward-progress safety net: a $2002 sprite-0 spin that polls > ~1 frame with no rendered hit
+  (heavy attract transitions where the recomp's NMI sets up VRAM later than the fixed phase
+  assumes) pulses bit6 — same role the per-frame path's pulse already serves for SMB's in-NMI
+  wait; never fires during normal hits. NOT YET default (parity-gated). Remaining for later
+  increments: per-dot precision (sub-scanline sprite-0/A12). [DONE since: scroll_y>=240
+  "negative-Y" canonical path (Yoshi's $F8 title — ported from ppu_render_frame's Option-A
+  hybrid, commit after cross-build); widescreen; DMC DMA cycle-steal.]
+- **Phase 3 — dot-PPU is now the DEFAULT renderer for all games (2026-06-29).** Per the
+  owner's directive ("the single unified CORRECT path"), `ppu_dot_init` defaults `g_dot_ppu_on=1`
+  (env `NESRECOMP_DOT_PPU=0` forces the legacy per-frame renderer for A/B + the width!=256
+  widescreen fallback). Breadth regression — all four games boot `[ppu_dot] ON (default)`,
+  0 dispatch misses, no hang: SMB 3000f / Zelda 2000f / MM3 1500f / Faxanadu 1500f. Faxanadu
+  (MMC1, screen-flip HUD) stood up on the `_acc` engine as the 4th game; its HUD renders
+  correctly via REAL per-scanline sprite-0 — the engine's per-frame predictor patch
+  (runtime.c:1113) is provably inert when the dot path is active.
+  **GOAL = retire the per-frame renderer entirely (make the dot-PPU the SOLE renderer).**
+  - **(1) widescreen in the dot path — DONE (commit 217a8c2).** Ported pillarbox + margin BG +
+    OAM 16-bit X sidecar + fb_x offset into the per-scanline renderer; 512px back buffer;
+    main_runner only calls `ppu_render_frame` when `NESRECOMP_DOT_PPU=0`. Validated on SMB 16:9
+    (428px): pillarbox + gameplay both 1.0 structural vs per-frame; 3000f smoke 0 misses;
+    vanilla unchanged (SMB title byte-exact; Zelda/MM3/Faxanadu 0 misses). This was the LAST
+    hard dependency — the per-frame renderer is now dead weight reachable only via the
+    `NESRECOMP_DOT_PPU=0` A/B flag.
+  - **(2) DELETE the per-frame renderer + heuristics — queued for FINAL AXES VALIDATION** (task 8).
+    Fully scoped (reference-mapped): NO savestate impact, NO game-extras impact. Cut list:
+    `ppu_render_frame`, `service_mmc3_scanline_irq`, `bg_color`, `render_tile_row`,
+    `bg_color_idx_at`, `ppu_predict_spr0_hit_scanline`, the `g_render_irq_*`/`g_render_post_irq_*`
+    render diagnostics (ppu_renderer.c → keep only `g_nes_palette`, `g_disable_render_irq`,
+    `ppu_render_oam_debug`); the `$2002` predictor + legacy-pulse branches and the heuristic
+    globals `g_spr0_split_active`/`g_spr0_predict_disable`/`g_predicted_spr0_scanline`/
+    `g_spr0_reads_ctr_legacy`/`g_ppuscroll_*_hud`/`g_spr0_split_write_scanline` + their vblank
+    resets (runtime.c, main_runner.c); the matching fields/uses in debug_server.c; the decls in
+    nes_runtime.h/debug_server.h/game_extras.h; and drop the `NESRECOMP_DOT_PPU=0` fallback
+    (make the dot path unconditional). Keep `runtime_sync_scroll_from_v` (dot uses it).
+    Then full breadth re-regression.
+- **Phase 3 — per-dot precision** (sub-scanline sprite-0/A12): deferred — gold-plating for the
+  current test set (they split at scanline granularity); breadth-gated.
+
+## Phase 3 — Dot-accurate PPU  (biggest; needs Phase 2 oracle to validate cleanly)
+
+> **KEY FINDING (2026-06-29): dot-accuracy = a CYCLE-DRIVEN per-dot PPU (CPU/PPU interleave) —
+> the PPU analog of Phase 1's cycle-driven APU.** The current renderer composites the whole
+> frame AFTER the CPU runs the frame in bulk, so mid-frame writes / sprite-0 / A12 can't be
+> dot-exact. The fix: advance the PPU 3 dots per CPU cycle from `maybe_trigger_vblank` (like
+> `apu_clock_cycles`), rendering into the framebuffer as it goes. Unlike the APU (a clean
+> relocation of an existing per-substep loop), the PPU is FROM-SCRATCH: 8-cycle BG fetch +
+> shift registers, secondary-OAM sprite eval, sprite-0/overflow per cycle, palette/mirroring,
+> per-fetch CHR/A12 through every mapper. Build behind `NESRECOMP_DOT_PPU` (default OFF) and
+> bring to parity (SMB/MM3 structural 1.0, Zelda 0.99 + dot-IRQ vs mesen_mm3_irq.lua) BEFORE
+> it can be default — the per-frame renderer is pixel-perfect on current games, so the only
+> way this change can go is regress. Validate via the external Mesen-Lua PPU-mem/cycle taps
+> (Phase 2). "Phase 4" (DMC DMA cycle-steal) rides the same interleave (CPU stalls at fetch
+> cycles) and should follow once the PPU interleave exists.
+
+**Goal.** Rewrite `ppu_renderer.c` from per-frame to per-dot/per-scanline cycle-accurate
+rendering: dot-precise sprite-0, sprite-overflow per cycle, mid-scanline writes, A12-per-fetch
+MMC3 IRQ (closes Axis-3 dot precision + Axis-5a dot-raster together).
+
+**Approach (incremental).** Per-scanline first (BG + sprites + sprite-0 at scanline
+granularity with mid-frame register latching), then per-dot for the A12/sprite-0 cases that
+need it. Keep the renderer behind a flag so the per-frame path remains until parity.
+
+**Validation.** Uses the Phase-2 oracle: per-scanline framebuffer + PPU-state diff at synced
+frames (RNG-freeze), dot-precise MMC3 IRQ vs `mesen_mm3_irq.lua` (scanline+dot+cycle). Must
+keep SMB/Zelda/MM3 structural framebuf at/above current (1.0/0.992/1.0).
+
+**Risk / bail.** Largest blast radius (every game renders through it). BAIL: gate behind a
+build flag; if parity regresses and can't recover → keep the per-frame renderer default,
+commit the dot path as opt-in/WIP. **Checkpoint:** commit per milestone (per-scanline parity,
+then dot-precise IRQ, then full dot).
+
+## Sequencing notes
+- One phase per work-stream; expect each to span one+ session. Resume via the checkpoint
+  commit + this doc.
+- Mirror-to-master / merge-to-main remains the deferred end-of-stream step (owner's call),
+  independent of these branch checkpoints.

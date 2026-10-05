@@ -1,0 +1,38 @@
+build/
+build_recomp/
+build_recomp_falcon/
+build-recompiler*/
+_build*/
+generated/
+
+# CMake configure/build by-products (also created in out-of-tree build dirs)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+install_manifest.txt
+Testing/
+
+# Visual Studio per-user workspace files
+.vs/
+*.suo
+*.user
+
+# ROM files — never commit game ROMs
+*.nes
+*.bin
+*.sav
+
+# Log / trace files
+*.log
+*.csv
+!*_annotations.csv
+
+# Python tooling caches
+__pycache__/
+*.pyc
+
+
+# Local MCP server config (paths are machine-specific); see .mcp.json.example
+.mcp.json

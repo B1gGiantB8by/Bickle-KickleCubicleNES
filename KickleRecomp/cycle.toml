@@ -1,0 +1,168 @@
+[game]
+output_prefix = "Kickle"
+cycle_accurate = true
+cycle_seed_file = "cycle-seeds.txt"
+
+[[mod_function_hook]]
+id = "kickle.select.world-init"
+addr = 0x82BB
+bytes = "AE 0A 01 BD C5 82"
+
+[[mod_function_hook]]
+id = "kickle.rush.room-ready"
+addr = 0x83D2
+bytes = "A5 B1 29 01 F0 03"
+[[mod_function_hook]]
+id = "kickle.boss.cinematic"
+addr = 0x889A
+bytes = "A9 3C 20 D9 F8 A9 06"
+
+[[mod_function_hook]]
+id = "kickle.boss.arena"
+addr = 0x9889
+bytes = "20 12 F8 20 9C 9B 20 A7 9A"
+
+[[mod_function_hook]]
+id = "kickle.boss.combat"
+addr = 0x9AD3
+bytes = "A9 2B 20 4B C0 A2 00"
+
+[[mod_function_hook]]
+id = "kickle.boss.end"
+addr = 0x89FF
+bytes = "A5 10 D0 03 4C 73 8B"
+
+[[mod_function_hook]]
+id = "kickle.boss.clean-room"
+addr = 0x9AB5
+bytes = "A9 00 8D 00 A0 AD 0A 01"
+
+[[mod_function_hook]]
+id = "kickle.princess.clean-room"
+addr = 0x9F22
+bytes = "A9 00 8D 00 A0 A9 E8"
+
+[[mod_function_hook]]
+id = "kickle.boss.room-visible"
+addr = 0x9A43
+bytes = "A5 DC 29 E7 09 08"
+
+[[mod_function_hook]]
+id = "kickle.boss.world-transition"
+addr = 0x9EC2
+bytes = "20 12 F8 A9 01 8D"
+
+[[mod_function_hook]]
+id = "kickle.hardcore.puzzle-death"
+addr = 0x8679
+bytes = "A5 B6 D0 03 4C 67 81"
+
+[[mod_function_hook]]
+id = "kickle.hardcore.boss-death"
+addr = 0x8BB7
+bytes = "A5 B6 F0 29 C6 B6"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-0"
+addr = 0xA2C2
+bytes = "85 B1 60 A0 00 B1"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-1"
+addr = 0x86C1
+bytes = "85 B1 60 AD 9C AB"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-2"
+addr = 0x9C4D
+bytes = "85 B1 E6 0D A5 0D"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-3"
+addr = 0x9DAD
+bytes = "85 B1 A5 9E C9 48"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-4"
+addr = 0xB74F
+bytes = "85 B1 AD 64 B8 85"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-5"
+addr = 0xB799
+bytes = "85 B1 20 00 C0 60"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-6"
+addr = 0xB7E6
+bytes = "85 B1 A9 02 A0 0F"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-7"
+addr = 0x8AB0
+bytes = "85 B1 60 11 20 16"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.hit-8"
+addr = 0xA439
+bytes = "85 B1 A9 00 91 0E"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-0"
+addr = 0x8252
+bytes = "20 CA 82 A9 02 85 B6 A9"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-1"
+addr = 0x8167
+bytes = "A5 DC 09 80 85 DC 20 8E"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-2"
+addr = 0x8351
+bytes = "A9 FF 20 4B C0 20 1D F8"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-3"
+addr = 0x852C
+bytes = "A9 FF 20 4B C0 20 1D F8"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-4"
+addr = 0x98DA
+bytes = "A9 FF 20 4B C0 A9 06 20"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-5"
+addr = 0xA1BA
+bytes = "A9 01 91 0E 20 17 A6 A0"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-6"
+addr = 0xB651
+bytes = "A9 01 91 0E 20 64 BC A0"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-7"
+addr = 0xAC26
+bytes = "A5 A4 85 0B A0 16 91 8C"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-8"
+addr = 0xBBCC
+bytes = "A5 CA C9 02 90 02 D0 05"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-9"
+addr = 0xB6C2
+bytes = "B1 0E 29 03 A0 0A 91 8C"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-10"
+addr = 0xB78F
+bytes = "20 27 C0 E6 0F A9 00 A0"
+
+[[mod_function_hook]]
+id = "kickle.achievement.event-11"
+addr = 0xA8F0
+bytes = "A9 80 A0 0E 91 8C AD 1B"

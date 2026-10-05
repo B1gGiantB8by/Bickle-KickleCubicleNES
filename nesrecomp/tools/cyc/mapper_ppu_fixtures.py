@@ -1,0 +1,199 @@
+"""Executable PPU/WRAM contracts with documented expected bytes.
+
+Programs wait through PPU warm-up, exercise $2006/$2007, then render. A=$42
+means every assertion passed; A=$EE identifies failure. CHR ROM pages contain
+their physical 1 KiB page number. No emulator-generated expectations are used.
+"""
+
+
+def ppu_contract(mapper, prg_kb, chr_kb, operations, suffix=''):
+    code = bytearray([0x78, 0xd8, 0xa2, 0xff, 0x9a])
+    failures = []
+
+    def store(address, value):
+        code.extend([0xa9, value, 0x8d, address & 255, address >> 8])
+
+    def ppu_address(address):
+        code.extend([0xad, 0x02, 0x20])
+        store(0x2006, address >> 8)
+        store(0x2006, address & 255)
+
+    def expect(value):
+        code.extend([0xc9, value, 0xf0, 3, 0x4c, 0, 0])
+        failures.append(len(code) - 2)
+
+    store(0x2000, 0)
+    store(0x2001, 0)
+    code.extend([0x2c, 0x02, 0x20, 0x10, 0xfb] * 2)
+    for kind, address, value in operations:
+        if kind == 'cpu':
+            store(address, value)
+        elif kind == 'cpu_read':
+            code.extend([0xad, address & 255, address >> 8])
+            expect(value)
+        else:
+            ppu_address(address)
+            if kind == 'write':
+                store(0x2007, value)
+            else:
+                code.extend([0xad, 0x07, 0x20] * 2)
+                expect(value)
+    # Leave a visible pattern for the frame-hash comparison after assertions.
+    ppu_address(0x3f01)
+    store(0x2007, 0x21)
+    ppu_address(0)
+    store(0x2005, 0)
+    store(0x2005, 0)
+    store(0x2001, 0x0a)
+    end = 0x8000 + len(code) + 2
+    code.extend([0xa9, 0x42, 0x4c, end & 255, end >> 8])
+    failure = 0x8000 + len(code)
+    for offset in failures:
+        code[offset:offset+2] = bytes([failure & 255, failure >> 8])
+    code.extend([0xa9, 0xee, 0x4c, (failure + 2) & 255, (failure + 2) >> 8])
+    assert len(code) < 0x1000  # $B000 remains $FF for bus-conflict-safe writes.
+    prg = bytearray([0xff]) * (prg_kb * 1024)
+    for bank in range(prg_kb // 8):
+        offset = bank * 8192
+        prg[offset:offset+len(code)] = code
+        prg[offset+8192-6:offset+8192] = bytes([0, 0x80]) * 3
+    chr_rom = b''.join(bytes([page & 255]) * 1024 for page in range(chr_kb))
+    header = b'NES\x1a' + bytes([prg_kb // 16, chr_kb // 8,
+                                (mapper & 15) << 4, mapper & 0xf0]) + bytes(8)
+    seeds = ''.join(f'{bank:02x}:8000\n' for bank in range(prg_kb // 8))
+    return f'ppu_mapper{mapper}{suffix}', header + prg + chr_rom, seeds, 'final:A=42'
+
+
+def ppu_fixtures():
+    yield ppu_contract(11, 128, 128, [('cpu', 0xb000, 0x21), ('read', 0, 16), ('read', 0x1fff, 23)])
+    yield ppu_contract(13, 32, 0, [
+        ('cpu', 0xb000, 3), ('write', 0x1000, 0xa5), ('write', 0x0000, 0x5a),
+        ('cpu', 0xb000, 1), ('read', 0x1000, 0), ('read', 0, 0x5a),
+        ('cpu', 0xb000, 3), ('read', 0x1000, 0xa5),
+        ('write', 0x2000, 0x31), ('read', 0x2800, 0x31)])
+    yield ppu_contract(34, 64, 64, [
+        ('cpu', 0x7ffd, 1), ('cpu_read', 0x7ffd, 1),
+        ('cpu', 0x7ffe, 2), ('cpu', 0x7fff, 5),
+        ('read', 0, 8), ('read', 0x1000, 20), ('cpu_read', 0x7fff, 5)])
+    yield ppu_contract(71, 128, 0, [
+        ('cpu', 0x9000, 0), ('write', 0x2000, 0x31), ('read', 0x2c00, 0x31),
+        ('cpu', 0x9000, 0x10), ('write', 0x2400, 0x32), ('read', 0x2800, 0x32),
+        ('cpu', 0x9000, 0), ('read', 0x2000, 0x31)])
+    yield ppu_contract(75, 128, 128, [
+        ('cpu', 0xe000, 2), ('cpu', 0xf000, 3), ('cpu', 0x9000, 6),
+        ('read', 0, 72), ('read', 0x1000, 76),
+        ('write', 0x2000, 0x31), ('read', 0x2800, 0x31),
+        ('cpu', 0x9000, 1), ('read', 0, 8), ('read', 0x1000, 12),
+        ('read', 0x2400, 0x31)])
+    yield ppu_contract(76, 128, 128, [
+        ('cpu', 0x8000, 2), ('cpu', 0x8001, 5),
+        ('cpu', 0x8000, 5), ('cpu', 0x8001, 8),
+        ('read', 0, 10), ('read', 0x0400, 11), ('read', 0x1800, 16)])
+    yield ppu_contract(79, 64, 64, [('cpu', 0x4100, 0x0b), ('read', 0, 24), ('read', 0x1fff, 31)])
+    yield ppu_contract(87, 32, 32, [
+        ('cpu', 0x6000, 1), ('read', 0, 16), ('cpu', 0x7fff, 2), ('read', 0, 8)])
+    yield ppu_contract(113, 256, 128, [
+        ('cpu', 0x4100, 0xeb), ('read', 0, 88), ('read', 0x1fff, 95),
+        ('write', 0x2000, 0x31), ('read', 0x2800, 0x31),
+        ('cpu', 0x4100, 0x6b), ('read', 0x2400, 0x31)])
+    # Bandai 74161/7432: CHR in the low nibble; 70 keeps the header's
+    # horizontal mirroring, 152's bit 7 selects one screen.
+    yield ppu_contract(70, 128, 128, [
+        ('cpu', 0xb000, 0x05), ('read', 0, 40), ('read', 0x1fff, 47),
+        ('write', 0x2000, 0x31), ('read', 0x2400, 0x31), ('write', 0x2800, 0x32), ('read', 0x2c00, 0x32),
+        ('read', 0x2000, 0x31)])
+    yield ppu_contract(152, 128, 128, [
+        ('cpu', 0xb000, 0x06), ('read', 0, 48), ('write', 0x2000, 0x31), ('read', 0x2c00, 0x31),
+        ('cpu', 0xb000, 0x86), ('write', 0x2400, 0x32), ('read', 0x2800, 0x32),
+        ('cpu', 0xb000, 0x06), ('read', 0x2800, 0x31)])
+    # Batch-3 discrete latches: CHR, one-screen/H-V mirroring, 93's CHR RAM
+    # enable (disabled reads see the address byte), 72's rising-edge CHR load.
+    yield ppu_contract(78, 128, 128, [
+        ('cpu', 0xb000, 0x50), ('read', 0, 40), ('write', 0x2000, 0x31), ('read', 0x2c00, 0x31),
+        ('cpu', 0xb000, 0x58), ('write', 0x2400, 0x32), ('read', 0x2800, 0x32),
+        ('cpu', 0xb000, 0x50), ('read', 0x2000, 0x31)])
+    yield ppu_contract(89, 128, 128, [
+        ('cpu', 0xb000, 0x85), ('read', 0, 13 * 8 % 256), ('write', 0x2000, 0x31),
+        ('cpu', 0xb000, 0x8d), ('write', 0x2000, 0x32), ('read', 0x2400, 0x32),
+        ('cpu', 0xb000, 0x85), ('read', 0x2c00, 0x31)])
+    yield ppu_contract(93, 128, 0, [
+        ('write', 0x0010, 0x5a), ('read', 0x0010, 0x5a),
+        ('cpu', 0xb000, 0x00), ('write', 0x0010, 0x77), ('read', 0x0020, 0x20),
+        ('cpu', 0xb000, 0x01), ('read', 0x0010, 0x5a)])
+    yield ppu_contract(97, 128, 8, [
+        ('cpu', 0x8000, 0x80), ('write', 0x2000, 0x31), ('write', 0x2400, 0x32), ('read', 0x2800, 0x31),
+        ('cpu', 0x8000, 0x00), ('read', 0x2800, 0x32)])
+    yield ppu_contract(72, 128, 128, [
+        ('cpu', 0xb000, 0x45), ('read', 0, 40), ('cpu', 0xb000, 0x46), ('read', 0, 40),
+        ('cpu', 0xb000, 0x06), ('cpu', 0xb000, 0x46), ('read', 0, 48)])
+    yield ppu_contract(86, 128, 64, [('cpu', 0x6000, 0x45), ('read', 0, 40), ('read', 0x1fff, 47)])
+    yield ppu_contract(101, 32, 64, [('cpu', 0x6000, 0x07), ('read', 0, 56), ('cpu', 0x7fff, 0x02), ('read', 0x1c00, 23)])
+    # Irem LROG017 (77): 2 KiB CHR ROM at $0000, CHR RAM above, four RAM nametables.
+    yield ppu_contract(77, 128, 16, [
+        ('cpu', 0xb000, 0x30), ('read', 0, 6), ('read', 0x0400, 7),
+        ('write', 0x0000, 0x77), ('read', 0x0000, 6),
+        ('write', 0x0800, 0x5a), ('write', 0x1fff, 0xa5), ('read', 0x0800, 0x5a), ('read', 0x1fff, 0xa5),
+        ('write', 0x2000, 0x31), ('write', 0x2400, 0x32), ('write', 0x2800, 0x33), ('write', 0x2c00, 0x34),
+        ('read', 0x2000, 0x31), ('read', 0x2400, 0x32), ('read', 0x2800, 0x33), ('read', 0x2c00, 0x34)])
+    # Oeka Kids (96): moving the PPU address into $2xxx latches A9-A8 as the
+    # inner 4 KiB CHR RAM bank at $0000; $1000 is inner bank 3; bit 2 the outer bank.
+    yield ppu_contract(96, 128, 0, [
+        ('write', 0x2100, 0), ('write', 0x0010, 0x5a),
+        ('write', 0x2200, 0), ('read', 0x0010, 0),
+        ('write', 0x2100, 0), ('read', 0x0010, 0x5a),
+        ('cpu', 0xb000, 0x04), ('read', 0x0010, 0), ('cpu', 0xb000, 0x00), ('read', 0x0010, 0x5a),
+        ('write', 0x1010, 0x77), ('write', 0x2300, 0), ('read', 0x0010, 0x77),
+        # Staying inside $2xxx does not latch: $2101 -> $2300 keeps inner bank 1.
+        ('write', 0x2100, 0), ('write', 0x2300, 0), ('write', 0x0020, 0x66),
+        ('write', 0x2100, 0), ('read', 0x0020, 0x66)])
+    yield ppu_contract(144, 128, 128, [('cpu', 0xb000, 0x50), ('read', 0, 40), ('read', 0x1fff, 47)])
+    yield ppu_contract(146, 64, 64, [('cpu', 0x4100, 0x05), ('read', 0, 40), ('cpu', 0x5f00, 0x02), ('read', 0x1fff, 23)])
+    yield ppu_contract(148, 64, 64, [('cpu', 0xb000, 0x06), ('read', 0, 48), ('read', 0x1fff, 55)])
+    yield ppu_contract(140, 128, 128, [('cpu', 0x6000, 0x2a), ('read', 0, 80), ('read', 0x1fff, 87)])
+    yield ppu_contract(184, 32, 32, [
+        ('cpu', 0x6000, 0x12), ('read', 0, 8), ('read', 0x1000, 20),
+        ('cpu', 0x7fff, 0), ('read', 0, 0), ('read', 0x1000, 16)])
+    # Active Enterprises: CHR = A0-A3:D0-D1, mirroring = A13. Every write here
+    # keeps chip 0 page 0 in 32 KiB mode, the code's own bank.
+    yield ppu_contract(228, 256, 512, [
+        ('cpu', 0x8005, 2), ('read', 0, 176), ('read', 0x1fff, 183),
+        ('cpu', 0x800f, 3), ('read', 0, 248),
+        ('cpu', 0xa000, 0), ('read', 0, 0), ('write', 0x2000, 0x31), ('read', 0x2400, 0x31),
+        ('cpu', 0x8000, 0), ('read', 0x2800, 0x31),
+        ('cpu', 0x4020, 5), ('cpu_read', 0x4020, 0x40)])
+    # CNROM + copy protection (mapper 185). Unprotected reads return the CHR
+    # page number; protected reads leave the address byte with D0 pulled up.
+    # Submapper 0 (iNES): the first two $2007 reads see no CHR.
+    yield ppu_contract(185, 32, 8, [
+        ('read', 0x0010, 0x11), ('read', 0x0010, 0), ('read', 0x0456, 1),
+        ('cpu', 0xb000, 0x13), ('read', 0x1c02, 7)], '_sub0')
+    # Caltron 6-in-1: outer latch by address, inner CHR only with A2 set and
+    # ANDed with the ROM byte ($8000 holds SEI, $78; $B000 holds $FF).
+    yield ppu_contract(41, 256, 128, [
+        ('cpu', 0x600c, 0), ('read', 0, 32), ('read', 0x1fff, 39),
+        ('cpu', 0xb000, 2), ('read', 0, 48),
+        ('cpu', 0x800b - 0xb, 3), ('read', 0, 32),
+        ('cpu', 0xb000, 1), ('read', 0x0400, 41),
+        ('cpu', 0x600b, 0), ('cpu', 0xb000, 3), ('read', 0x0400, 41),
+        ('cpu', 0x6024, 0), ('write', 0x2000, 0x31), ('read', 0x2400, 0x31),
+        ('cpu', 0x6004, 0), ('read', 0x2800, 0x31),
+        ('cpu_read', 0x6000, 0x60)])
+    # Namco 118: 88/154 put the right pattern table in the second 64 KiB;
+    # 154's bit 6 selects one screen; 95's CHR A15 (bank bit 5) is CIRAM A10.
+    yield ppu_contract(88, 128, 128, [
+        ('cpu', 0x8000, 0), ('cpu', 0x8001, 0x45), ('cpu', 0x8000, 2), ('cpu', 0x8001, 0x03),
+        ('read', 0, 4), ('read', 0x0400, 5), ('read', 0x1000, 0x43),
+        ('write', 0x2000, 0x31), ('read', 0x2400, 0x31)])
+    yield ppu_contract(154, 128, 128, [
+        ('cpu', 0x8000, 2), ('cpu', 0x8001, 0x03), ('read', 0x1000, 0x43),
+        ('write', 0x2000, 0x31), ('read', 0x2c00, 0x31),
+        ('cpu', 0xc000, 0x40), ('write', 0x2400, 0x32), ('read', 0x2800, 0x32),
+        ('cpu', 0x8000, 0x00), ('read', 0x2000, 0x31)])
+    yield ppu_contract(95, 128, 32, [
+        ('cpu', 0x8000, 0), ('cpu', 0x8001, 0x20), ('cpu', 0x8000, 1), ('cpu', 0x8001, 0x02),
+        ('write', 0x2000, 0x31), ('read', 0x2400, 0x31), ('write', 0x2800, 0x32), ('read', 0x2c00, 0x32),
+        ('cpu', 0x8000, 0), ('cpu', 0x8001, 0x00), ('read', 0x2000, 0x32)])
+    yield ppu_contract(206, 128, 64, [
+        ('cpu', 0x8000, 0), ('cpu', 0x8001, 0xff),
+        ('cpu', 0x8000, 2), ('cpu', 0x8001, 0xc5),
+        ('read', 0, 62), ('read', 0x0400, 63), ('read', 0x1000, 5)])

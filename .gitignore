@@ -1,0 +1,57 @@
+# Local game images, patches, recordings, and generated ROM data
+/roms/
+*.nes
+*.sfc
+*.smc
+*.fds
+*.qd
+*.rom
+*.ips
+*.bps
+gale_data.h
+generated/
+*.mp4
+*.mkv
+
+# Build output and local tool/editor state
+build*/
+out/
+dist/
+release/
+CMakeCache.txt
+CMakeFiles/
+*.exe
+*.obj
+*.o
+*.pdb
+*.log
+*.jsonl
+__pycache__/
+.venv/
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Player-specific settings/progress (default-config.ini is intentionally tracked)
+config.ini
+rom.cfg
+keybinds.ini
+launcher-window.ini
+offline-achievements.ini
+*.sav
+*.state
+*.state.*
+cyc_shot_*.png
+dispatch_*
+runtime_faults.*
+
+# Secrets and local automation metadata
+.env
+.env.*
+*.pem
+*.key
+.codex/
+.agents/
+.aws/
