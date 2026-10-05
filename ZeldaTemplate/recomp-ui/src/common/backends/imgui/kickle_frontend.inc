@@ -168,7 +168,7 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
     }
     ImGui::EndChild();
     ImGui::TextDisabled("D-pad / Stick: Navigate    A: Select    Mouse: Click");
-    ImGui::SameLine(); ImGui::TextDisabled("v0.0.1");
+    ImGui::SameLine(); ImGui::TextDisabled("v0.0.2");
     ImGui::End();
     ImGui::PopStyleVar(3); ImGui::PopStyleColor(6);
     draw_standalone_builtin_rom_picker(m,th);

@@ -367,12 +367,28 @@ static void apply_settings(void)
 {
     if (!s_win) return;
     Uint32 fs = s_set.fullscreen == 1 ? SDL_WINDOW_FULLSCREEN_DESKTOP : s_set.fullscreen == 2 ? SDL_WINDOW_FULLSCREEN : 0;
-    if ((SDL_GetWindowFlags(s_win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) != fs)
-        SDL_SetWindowFullscreen(s_win, fs);
+    if ((SDL_GetWindowFlags(s_win) & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) != fs) {
+        /* Exclusive fullscreen otherwise picks a mode from the small NES
+         * window dimensions, often a 4:3 mode. Keep the monitor's desktop
+         * resolution so wide presentation has a wide drawable in all modes. */
+        if (fs == SDL_WINDOW_FULLSCREEN) {
+            SDL_DisplayMode desktop;
+            int display = SDL_GetWindowDisplayIndex(s_win);
+            if (display >= 0 && SDL_GetDesktopDisplayMode(display, &desktop) == 0) {
+                if (SDL_SetWindowDisplayMode(s_win, &desktop) != 0)
+                    fprintf(stderr,"Could not select exclusive display mode: %s\n",SDL_GetError());
+            }
+        } else SDL_SetWindowDisplayMode(s_win, NULL);
+        if (SDL_SetWindowFullscreen(s_win, fs) != 0)
+            fprintf(stderr,"Could not change fullscreen mode: %s\n",SDL_GetError());
+    }
     if (!fs) SDL_SetWindowSize(s_win, s_tex_w * s_set.window_scale, logical_h() * s_set.window_scale);
     SDL_RenderSetLogicalSize(s_ren, s_tex_w, logical_h());
     SDL_RenderSetIntegerScale(s_ren, s_set.integer_scale ? SDL_TRUE : SDL_FALSE);
     if (s_tex) SDL_SetTextureScaleMode(s_tex, s_set.linear_filter ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+    int drawable_w, drawable_h;
+    if (SDL_GetRendererOutputSize(s_ren, &drawable_w, &drawable_h) == 0)
+        cyc_video_window_resized(drawable_w, drawable_h);
 }
 
 static bool ensure_texture(int w, int h)
@@ -1137,7 +1153,7 @@ int cyc_sdl_main(const char *title_in, int scale)
     char *dot = strrchr(title, '.');
     if (dot && dot != title && base != title_in) *dot = 0;
 #ifdef CYC_KICKLE_BRANDING
-    snprintf(title,sizeof(title),"Kickle Cubicle v0.0.1");
+    snprintf(title,sizeof(title),"Kickle Cubicle v0.0.2");
 #endif
     SDL_SetMainReady();
     /* A hidden window never has the keyboard focus, and SDL drops controller

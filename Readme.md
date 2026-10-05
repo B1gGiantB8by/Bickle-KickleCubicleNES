@@ -1,4 +1,4 @@
-# Kickle Cubicle v0.0.1
+# Kickle Cubicle v0.0.2
 
 > **Source repository:** Build instructions are in **Building this source
 > snapshot** below. No executable or game ROM is included. This snapshot was
@@ -103,7 +103,7 @@ The clean package does not delete existing progress.
 
 ## Notes and credits
 
-This is an early v0.0.1 build. The release executable compiled successfully;
+This is an early v0.0.2 build. The release executable compiled successfully;
 this package has not received a separate gameplay verification pass. Some
 achievement conditions and experimental features may need further refinement.
 Save states should be kept with the version that created them.

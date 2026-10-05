@@ -446,7 +446,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         }
         ImGui::SameLine();
         const char *close_label = "Resume";
-        if(kickle) { ImGui::TextDisabled("v0.0.1"); ImGui::SameLine(); }
+        if(kickle) { ImGui::TextDisabled("v0.0.2"); ImGui::SameLine(); }
         const float close_w = touch_friendly
             ? std::max(320.0f, ImGui::CalcTextSize(close_label).x +
                                    theme.spacing_lg * 2.0f)
