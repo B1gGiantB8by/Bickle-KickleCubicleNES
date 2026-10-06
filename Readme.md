@@ -62,18 +62,18 @@ Isometric mode remains experimental in the source and is hidden from menus.
 
 **Audio Options:** Enable/disable audio and adjust volume.
 
-**Cheats:** Infinite Lives and Invincibility.
+**Cheats:** Infinite Lives keeps nine spare lives; Invincibility prevents lethal enemy and hazard collisions and remains active after loading a save state; Freeze Timer stops the level countdown while allowing completion time bonuses to count down. Cheats are unavailable in hardcore mode.
 
-**Level Select:** Choose Garden, Fruit, Cake, or Toy Land and a puzzle.
+**Level Select:** Choose Garden, Fruit, Cake, Toy Land, or the post-game Special Zones and a puzzle.
 Start Selected Level skips the visible title screen and proceeds to the map
 introduction for the selection. This starts a fresh run and disables Boss Rush.
-Garden, Fruit, and Toy have 17 puzzles each; Cake has 16.
+Garden, Fruit, and Toy have 17 puzzles each; Cake has 16. All 30 Special Zones can be selected directly without first completing the main quest.
 
 **Additional Modes:**
 
 - **Boss Rush:** Fight all four bosses in order.
 - **Gale Festival:** Play the remixed puzzle levels.
-- **1 Life, 1 Credit Clear:** One-life full-game challenge. Cheats, rewind,
+- **1 Life, 1 Credit Clear (Experimental):** One-life full-game challenge. Cheats, rewind,
   fast-forward, save/load states, and level selection are unavailable.
   Resetting to the title screen abandons the attempt.
 
@@ -85,7 +85,7 @@ or reset with confirmation. No RetroAchievements account, login, or reporting
 is used.
 
 In the **RB overlay**, **System** is at the bottom. It contains save/load state,
-Resume, Reset to Title Screen, and Quit. Reset ends the current run; earned
+Resume, Reset to Title Screen, and Quit to Desktop with a Yes/No confirmation. Reset ends the current run; earned
 achievements remain unlocked.
 
 ## Files and progress

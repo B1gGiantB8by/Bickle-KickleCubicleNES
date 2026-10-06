@@ -26,6 +26,8 @@ struct RecompRuntimeUi {
      * commit-on-Enter -- is the widget's business, not the model's. The core
      * keeps it here only so the host can query wants_text_input.
      */
+    const RecompRuntimeUiItem *quit_confirmation;
+    int quit_yes;
     int editing_text;
     char edit_buffer[128];
     /* recomp_runtime_ui_set_backdrop: the game's dimming (alpha of black)
@@ -46,6 +48,7 @@ const RecompRuntimeUiItem *recomp_runtime_ui_section_item(
 int recomp_runtime_ui_current_value(RecompRuntimeUi *ui,
                                     const RecompRuntimeUiItem *item,
                                     int *value);
+void recomp_runtime_ui_confirm_quit(RecompRuntimeUi *ui, int yes);
 void recomp_runtime_ui_adjust_current(RecompRuntimeUi *ui, int direction,
                                       int activate, int repeat);
 void recomp_runtime_ui_enter_section(RecompRuntimeUi *ui, size_t section);

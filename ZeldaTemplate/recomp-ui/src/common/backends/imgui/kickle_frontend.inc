@@ -103,8 +103,12 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
         draw_player_panel(m,th,0,ImGui::GetContentRegionAvail().x);
     } else if(page==4) {
         kickle_toggle("Infinite Lives","kickle.infinite_lives");
+        ImGui::TextWrapped("Keep nine spare lives. Death and respawning still work normally.");
         kickle_toggle("Invincibility","kickle.invincibility");
-        ImGui::TextWrapped("Death and respawning remain enabled.");
+        ImGui::TextWrapped("Prevent lethal enemy and hazard collisions.");
+        kickle_toggle("Freeze Timer","kickle.freeze_timer");
+        ImGui::TextWrapped("Stop the level countdown at its current value. Completion time bonuses still count down normally.");
+        ImGui::TextWrapped("Cheats are unavailable during a hardcore run.");
     } else if(page==5) {
         bool locked=kickle_value("kickle.hardcore")!=0;
         if(locked) ImGui::BeginDisabled();
@@ -114,8 +118,8 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
         if(world_item && ImGui::Combo("World",&world,world_item->choices,(int)world_item->choice_count))
             g_game_callbacks->set_value(g_game_callbacks->context,world_item,world);
         int level=kickle_value("kickle.level");
-        // Cake Land has sixteen puzzles; the other worlds have seventeen.
-        if(level_item && ImGui::SliderInt("Level",&level,1,world==2 ? 16 : 17))
+        // Special Zones have thirty rounds; Cake has sixteen, other lands seventeen.
+        if(level_item && ImGui::SliderInt("Level",&level,1,world==4 ? 30 : (world==2 ? 16 : 17)))
             g_game_callbacks->set_value(g_game_callbacks->context,level_item,level);
         bool ready=launcher_model_can_launch(m);
         if(!ready) ImGui::BeginDisabled();
@@ -123,11 +127,12 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
             m->action=LNG_ACTION_LAUNCH;
         if(!ready) ImGui::EndDisabled();
         if(locked) ImGui::EndDisabled();
-        ImGui::TextWrapped(locked ? "Level Select is unavailable in 1 Life, 1 Credit Clear mode." : "Starts a fresh run at this puzzle in Original or Gale Festival mode. Boss Rush is turned off.");
+        ImGui::TextWrapped(locked ? "Level Select is unavailable in 1 Life, 1 Credit Clear mode." : "Starts a fresh run at this puzzle in Original or Gale Festival mode. Special Zones selects the 30 post-game rounds. Boss Rush is turned off.");
         if(!ready) ImGui::TextWrapped("Load your matching ROM on the Start Game page first.");
     } else if(page==6) {
-        kickle_toggle("1 Life, 1 Credit Clear","kickle.hardcore");
+        kickle_toggle("1 Life, 1 Credit Clear (Experimental)","kickle.hardcore");
         ImGui::TextWrapped("Hardcore: one life, no cheats, rewind, fast-forward or save/load states.");
+        ImGui::TextWrapped("Caution: a complete hardcore run has not been verified. Bugs may interrupt or end your attempt.");
         kickle_toggle("Boss Rush","kickle.boss_rush");
         kickle_toggle("Gale Festival","kickle.game_mode");
         ImGui::TextWrapped("Boss Rush visits all four bosses. Gale Festival remixes the puzzle levels. Start Game begins the selected mode.");

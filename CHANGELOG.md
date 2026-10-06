@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.2 update — October 6, 2026
+
+- Add direct selection of all 30 post-game Special Zones.
+- Improve Invincibility, including save-state loading and enemy overlap handling.
+- Improve widescreen water sampling and transitions on dense puzzle layouts.
+- Reduce sprite flickering on the second boss and Special Zones 18 and 28.
+- Add a larger Quit to Desktop confirmation with Yes selected by default.
+- Label the hardcore challenge Experimental.
+
+## Earlier v0.0.2 updates
+
+- Preserve the original widescreen edge detector; add an interior-water fallback only for Garden Land level 8.
+- Add descriptions below the frontend cheat toggles.
+- Add Freeze Timer; keep completion bonus conversion and hardcore restrictions.
+
+Build completed; gameplay changes await player confirmation.
+
 ## v0.0.2
 
 - Updated the launcher and game window titles and both menu footers to v0.0.2.

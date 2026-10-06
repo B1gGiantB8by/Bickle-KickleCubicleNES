@@ -104,7 +104,7 @@ bytes = "85 B1 60 11 20 16"
 
 [[mod_function_hook]]
 id = "kickle.invincibility.hit-8"
-addr = 0xA439
+addr = 0x8439
 bytes = "85 B1 A9 00 91 0E"
 
 [[mod_function_hook]]
@@ -166,3 +166,43 @@ bytes = "20 27 C0 E6 0F A9 00 A0"
 id = "kickle.achievement.event-11"
 addr = 0xA8F0
 bytes = "A9 80 A0 0E 91 8C AD 1B"
+
+[[mod_function_hook]]
+id = "kickle.freeze-timer.countdown"
+addr = 0xCEEE
+bytes = "AD 18 01 29 0F F0 04"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.player-death"
+addr = 0xA099
+bytes = "A5 B1 09 40 85 B1 20 00 C0"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.current-hazard"
+addr = 0xA08B
+bytes = "29 86 F0 1D 10 08"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.destination-hazard"
+addr = 0xA183
+bytes = "29 86 F0 0D 10 08"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.current-ice"
+addr = 0xA29B
+bytes = "C9 21 F0 10 C9 20"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.move-ice"
+addr = 0xA17A
+bytes = "C9 0C D0 03 4C 3A A2"
+
+[[mod_function_hook]]
+id = "kickle.invincibility.start-ice"
+addr = 0xA329
+bytes = "C9 0C F0 CE A0 0E"
+
+[[mod_function_hook]]
+id = "kickle.select.special-start"
+addr = 0x8306
+bytes = "20 EF 82 A5 C1 29 87"

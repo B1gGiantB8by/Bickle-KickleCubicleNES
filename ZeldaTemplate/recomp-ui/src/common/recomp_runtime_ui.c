@@ -103,7 +103,7 @@ void recomp_runtime_ui_open(RecompRuntimeUi *ui) {
 void recomp_runtime_ui_close(RecompRuntimeUi *ui) {
     /* Abandon any in-progress edit, so reopening never resumes a stale buffer
      * and wants_text_input cannot stay stuck on with the menu shut. */
-    if (ui) ui->editing_text = 0;
+    if (ui) { ui->editing_text = 0; ui->quit_confirmation = NULL; }
     visibility(ui, 0);
 }
 
@@ -133,6 +133,14 @@ static void accepted_action(RecompRuntimeUi *ui) {
     ui->status_frames = 90;
 }
 
+void recomp_runtime_ui_confirm_quit(RecompRuntimeUi *ui, int yes) {
+    if (!ui || !ui->quit_confirmation) return;
+    const RecompRuntimeUiItem *item = ui->quit_confirmation;
+    ui->quit_confirmation = NULL;
+    if (yes && ui->config.callbacks.run_action)
+        ui->config.callbacks.run_action(ui->config.callbacks.context, item);
+}
+
 void recomp_runtime_ui_adjust_current(RecompRuntimeUi *ui, int direction,
                                       int activate, int repeat) {
     const RecompRuntimeUiItem *item = recomp_runtime_ui_section_item(
@@ -140,6 +148,11 @@ void recomp_runtime_ui_adjust_current(RecompRuntimeUi *ui, int direction,
     if (!item || !recomp_runtime_ui_item_enabled(ui, item)) return;
     if (item->type == RECOMP_RUNTIME_UI_ACTION) {
         if (!activate || repeat || !ui->config.callbacks.run_action) return;
+        if (item->key && !strcmp(item->key, "cyc.quit")) {
+            ui->quit_confirmation = item;
+            ui->quit_yes = 1;
+            return;
+        }
         if (ui->config.callbacks.run_action(ui->config.callbacks.context, item))
             accepted_action(ui);
         return;
@@ -262,6 +275,17 @@ int recomp_runtime_ui_handle_input(RecompRuntimeUi *ui,
         return 0;
     }
     if (!pressed) return 1;
+    if (ui->quit_confirmation) {
+        if (repeat) return 1;
+        if (input == RECOMP_RUNTIME_UI_INPUT_BACK || input == RECOMP_RUNTIME_UI_INPUT_TOGGLE)
+            recomp_runtime_ui_confirm_quit(ui, 0);
+        else if (input == RECOMP_RUNTIME_UI_INPUT_ACCEPT)
+            recomp_runtime_ui_confirm_quit(ui, ui->quit_yes);
+        else if (input == RECOMP_RUNTIME_UI_INPUT_LEFT || input == RECOMP_RUNTIME_UI_INPUT_RIGHT ||
+                 input == RECOMP_RUNTIME_UI_INPUT_UP || input == RECOMP_RUNTIME_UI_INPUT_DOWN)
+            ui->quit_yes = !ui->quit_yes;
+        return 1;
+    }
     if (input == RECOMP_RUNTIME_UI_INPUT_TOGGLE) {
         if (!repeat) recomp_runtime_ui_close(ui);
         return 1;

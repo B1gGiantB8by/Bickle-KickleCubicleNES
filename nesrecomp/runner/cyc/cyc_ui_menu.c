@@ -372,11 +372,8 @@ static int run_action(void *ctx, const RecompRuntimeUiItem *it)
         return ok;
     }
     if (is_key(it, "cyc.quit")) {
-        uint64_t now = s_host.now_ms();
-        if (s_quit_armed && now - s_quit_armed < 3000) { s_host.quit(); return 1; }
-        s_quit_armed = now;
-        recomp_runtime_ui_set_status(s_ui, "Press again to quit");
-        return 0;
+        s_host.quit();
+        return 1;
     }
     if (game_row(it) && x && x->menu_callbacks && x->menu_callbacks->run_action)
         return x->menu_callbacks->run_action(x->menu_callbacks->context, it);
@@ -511,7 +508,7 @@ bool cyc_ui_menu_open(void) { return s_ui && recomp_runtime_ui_is_open(s_ui); }
 void cyc_ui_toggle_menu(void)
 {
     if (!s_ui) return;
-    if (recomp_runtime_ui_is_open(s_ui)) recomp_runtime_ui_close(s_ui);
+    if (recomp_runtime_ui_is_open(s_ui)) recomp_runtime_ui_handle_input(s_ui, RECOMP_RUNTIME_UI_INPUT_TOGGLE, 1, 0);
     else recomp_runtime_ui_open(s_ui);
 }
 

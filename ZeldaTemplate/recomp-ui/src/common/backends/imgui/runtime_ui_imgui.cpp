@@ -316,6 +316,36 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         ImVec2(0.0f, 0.0f), display,
         IM_COL32(0, 0, 0, static_cast<int>(255.0f * (kickle ? .08f : ui->dim) + 0.5f)));
 
+    if (ui->quit_confirmation) {
+        push_runtime_style(theme, touch_friendly, 1.0f);
+        const float prompt_w = std::min(display.x - 32.0f, 620.0f);
+        ImGui::SetNextWindowPos(ImVec2(display.x*.5f, display.y*.5f), ImGuiCond_Always, ImVec2(.5f,.5f));
+        ImGui::SetNextWindowSize(ImVec2(prompt_w, std::min(display.y - 32.0f, 300.0f)), ImGuiCond_Always);
+        if (ImGui::Begin("Confirm Exit##runtime-quit", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavInputs)) {
+            ImGui::SetWindowFontScale(1.5f);
+            ImGui::TextUnformatted("Quit to Desktop?");
+            ImGui::Spacing();
+            ImGui::TextWrapped("Are you sure you want to exit the game?");
+            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+            const float button_w=(ImGui::GetContentRegionAvail().x-16.0f)*.5f;
+            for (int i=0;i<2;++i) {
+                const bool yes=i==0;
+                if (i) ImGui::SameLine(0,16.0f);
+                const bool selected=ui->quit_yes==yes;
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button,col(theme.accent));
+                const bool clicked=ImGui::Button(yes ? "Yes" : "No",ImVec2(button_w,58.0f));
+                if (selected) ImGui::PopStyleColor();
+                if (clicked) recomp_runtime_ui_confirm_quit(ui,yes);
+            }
+            ImGui::Spacing();
+            ImGui::TextDisabled("A / Enter: Select    B / Escape: Cancel");
+        }
+        ImGui::End();
+        pop_runtime_style();
+        return;
+    }
     const float short_axis = std::min(display.x, display.y);
     const float touch_row_height =
         std::clamp(short_axis * 0.085f, 92.0f, 124.0f);
