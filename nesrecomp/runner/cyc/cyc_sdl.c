@@ -1016,6 +1016,13 @@ static void present_shot(long frame)
     free(px);
 }
 
+#ifdef CYC_KICKLE_BRANDING
+extern int kickle_motion_active(void);
+extern void kickle_motion_reset(void);
+extern void kickle_motion_draw(SDL_Renderer *,const uint32_t *,int,int,float);
+static bool s_motion_present;
+static float s_motion_alpha;
+#endif
 static void show(bool loading, const char *toast_title, const char *toast_body)
 {
     int w, h;
@@ -1067,6 +1074,9 @@ static void show(bool loading, const char *toast_title, const char *toast_body)
     if (s_bar) draw_drive_bar(loading);
 #else
     (void)loading;
+#endif
+#ifdef CYC_KICKLE_BRANDING
+    if(s_motion_present) kickle_motion_draw(s_ren,pic,w,h,s_motion_alpha);
 #endif
 #ifdef CYC_WITH_RECOMP_UI
     cyc_ui_render();
@@ -1153,7 +1163,7 @@ int cyc_sdl_main(const char *title_in, int scale)
     char *dot = strrchr(title, '.');
     if (dot && dot != title && base != title_in) *dot = 0;
 #ifdef CYC_KICKLE_BRANDING
-    snprintf(title,sizeof(title),"Kickle Cubicle v0.0.2");
+    snprintf(title,sizeof(title),"Kickle Cubicle v0.0.3");
 #endif
     SDL_SetMainReady();
     /* A hidden window never has the keyboard focus, and SDL drops controller
@@ -1227,6 +1237,9 @@ int cyc_sdl_main(const char *title_in, int scale)
     const Uint64 freq = SDL_GetPerformanceFrequency();
     Uint64 next = SDL_GetPerformanceCounter();
     Uint64 fps_mark = next, shown = 0;
+#ifdef CYC_KICKLE_BRANDING
+    Uint64 motion_sim_next=0, motion_frame_start=0;
+#endif
     uint64_t native_mark = cyc_run_native_cycles;
     uint64_t cycles_mark = cyc_cycle_count();
     int frames = 0, shot = 0;
@@ -1334,11 +1347,20 @@ int cyc_sdl_main(const char *title_in, int scale)
         bool assists=!policy || !policy->assists_allowed || policy->assists_allowed(policy->ctx);
         if(!assists && s_rewind_count) rewind_clear();
         bool rewinding = assists && !open && !inactive && st.shortcut[CYC_SC_REWIND];
+#ifdef CYC_KICKLE_BRANDING
+        fast=assists && st.shortcut[CYC_SC_FAST_FORWARD];
+        Uint64 motion_now=SDL_GetPerformanceCounter();
+        s_motion_present=kickle_motion_active() && !open && !inactive && !rewinding && !fast;
+        bool simulate=!s_motion_present || !motion_sim_next || motion_now>=motion_sim_next;
+        if(!s_motion_present) { motion_sim_next=0; kickle_motion_reset(); }
+#else
+        bool simulate=true;
+#endif
         if (rewinding) {
             rewind_step();
             if (dev) SDL_ClearQueuedAudio(dev);
         }
-        if (!open && !inactive && !rewinding) {
+        if (!open && !inactive && !rewinding && simulate) {
             uint8_t pad0 = st.buttons[0], pad1 = st.buttons[1];
             if (hold_input) {
                 if (pad0 || pad1) pad0 = pad1 = 0;
@@ -1355,6 +1377,14 @@ int cyc_sdl_main(const char *title_in, int scale)
             if(assists) rewind_capture();
             loading = s_fds && cyc_host_frame_unpaced();
             fast = assists && (st.shortcut[CYC_SC_FAST_FORWARD] || loading);
+#ifdef CYC_KICKLE_BRANDING
+            if(s_motion_present) {
+                Uint64 period=(Uint64)(frame_seconds*(double)freq);
+                if(!motion_sim_next || motion_now-motion_sim_next>freq/4) motion_sim_next=motion_now;
+                motion_frame_start=motion_sim_next;
+                motion_sim_next+=period;
+            }
+#endif
         }
         int16_t pcm[4096];
         size_t n;
@@ -1371,6 +1401,10 @@ int cyc_sdl_main(const char *title_in, int scale)
          * Applying a display filter to every simulated frame can consume all
          * the time saved by removing the normal frame delay. */
         Uint64 tnow = SDL_GetPerformanceCounter();
+#ifdef CYC_KICKLE_BRANDING
+        if(fast || loading) { s_motion_present=false; motion_sim_next=0; kickle_motion_reset(); }
+        s_motion_alpha=s_motion_present ? (float)((double)(tnow-motion_frame_start)/((double)freq*frame_seconds)) : 1.0f;
+#endif
         double present_seconds = fast ? 1.0 / 30.0 : frame_seconds;
         if ((!loading && !fast) || tnow - shown >= (Uint64)(present_seconds * (double)freq)) {
             show(loading, toast_title, toast_body);
@@ -1405,7 +1439,11 @@ int cyc_sdl_main(const char *title_in, int scale)
             next = tnow;
             continue;
         }
-        next += (Uint64)(frame_seconds * (double)freq);
+        double display_seconds=frame_seconds;
+#ifdef CYC_KICKLE_BRANDING
+        if(s_motion_present) display_seconds=1.0/240.0;
+#endif
+        next += (Uint64)(display_seconds * (double)freq);
         if (next > tnow) {
             Uint32 ms = (Uint32)((next - tnow) * 1000 / freq);
             if (ms > 1) SDL_Delay(ms - 1);

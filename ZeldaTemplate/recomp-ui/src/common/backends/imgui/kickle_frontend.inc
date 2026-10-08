@@ -127,15 +127,14 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
             m->action=LNG_ACTION_LAUNCH;
         if(!ready) ImGui::EndDisabled();
         if(locked) ImGui::EndDisabled();
-        ImGui::TextWrapped(locked ? "Level Select is unavailable in 1 Life, 1 Credit Clear mode." : "Starts a fresh run at this puzzle in Original or Gale Festival mode. Special Zones selects the 30 post-game rounds. Boss Rush is turned off.");
+        ImGui::TextWrapped(locked ? "Level Select is unavailable in 1 Life, 1 Credit Clear mode." : "Starts a fresh run at this puzzle. Special Zones selects the 30 post-game rounds. Boss Rush is turned off.");
         if(!ready) ImGui::TextWrapped("Load your matching ROM on the Start Game page first.");
     } else if(page==6) {
         kickle_toggle("1 Life, 1 Credit Clear (Experimental)","kickle.hardcore");
         ImGui::TextWrapped("Hardcore: one life, no cheats, rewind, fast-forward or save/load states.");
         ImGui::TextWrapped("Caution: a complete hardcore run has not been verified. Bugs may interrupt or end your attempt.");
         kickle_toggle("Boss Rush","kickle.boss_rush");
-        kickle_toggle("Gale Festival","kickle.game_mode");
-        ImGui::TextWrapped("Boss Rush visits all four bosses. Gale Festival remixes the puzzle levels. Start Game begins the selected mode.");
+        ImGui::TextWrapped("Boss Rush visits all four bosses. Start Game begins the selected mode.");
     } else {
         static bool confirm_reset=false;
         kickle_toggle("Enable Achievements","kickle.achievements_enabled");
@@ -167,13 +166,18 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
             ImGui::PushID(item.key);
             ImGui::Selectable(item.label,false,0,ImVec2(0,26));
             ImGui::TextColored(unlocked ? ImVec4(.4f,1.f,.5f,1) : ImVec4(.75f,.8f,.9f,1),"%s",unlocked ? "Unlocked" : "Locked");
-            ImGui::TextWrapped("%s",item.description);
+            if(item.description && item.description[0]) {
+                ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(.88f,.93f,1.f,1.f));
+                ImGui::TextWrapped("Challenge: %s",item.description);
+                ImGui::PopStyleColor();
+            }
             ImGui::Separator(); ImGui::PopID();
         }
+        ImGui::Dummy(ImVec2(0,24));
     }
     ImGui::EndChild();
     ImGui::TextDisabled("D-pad / Stick: Navigate    A: Select    Mouse: Click");
-    ImGui::SameLine(); ImGui::TextDisabled("v0.0.2");
+    ImGui::SameLine(); ImGui::TextDisabled("v0.0.3");
     ImGui::End();
     ImGui::PopStyleVar(3); ImGui::PopStyleColor(6);
     draw_standalone_builtin_rom_picker(m,th);

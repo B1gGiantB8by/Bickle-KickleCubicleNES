@@ -94,6 +94,7 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
         if (!item) continue;
 
         const bool enabled = recomp_runtime_ui_item_enabled(ui, item) != 0;
+        const bool achievement = item->key && !std::strncmp(item->key,"kickle.achievement.",19);
         const bool selected = ui->in_section && index == ui->row_index;
         char value[128];
         value_text(ui, item, value, sizeof(value));
@@ -156,7 +157,7 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
             draw->AddText(ImGui::GetFont(),ImGui::GetFontSize(),ImVec2(start.x + theme.spacing_md,
                                 start.y + theme.spacing_sm +
                                     ImGui::GetTextLineHeight() + 2.0f),
-                          u32(theme.text_muted), item->description,nullptr,wrap_w);
+                          u32(achievement ? theme.text : theme.text_muted), item->description,nullptr,wrap_w);
         }
         if (editing_this && enabled) {
             const float field_w = touch_friendly
@@ -317,6 +318,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         IM_COL32(0, 0, 0, static_cast<int>(255.0f * (kickle ? .08f : ui->dim) + 0.5f)));
 
     if (ui->quit_confirmation) {
+        const bool resetting=ui->quit_confirmation->key && !strcmp(ui->quit_confirmation->key,"kickle.reset_title");
         push_runtime_style(theme, touch_friendly, 1.0f);
         const float prompt_w = std::min(display.x - 32.0f, 620.0f);
         ImGui::SetNextWindowPos(ImVec2(display.x*.5f, display.y*.5f), ImGuiCond_Always, ImVec2(.5f,.5f));
@@ -325,9 +327,9 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavInputs)) {
             ImGui::SetWindowFontScale(1.5f);
-            ImGui::TextUnformatted("Quit to Desktop?");
+            ImGui::TextUnformatted(resetting ? "Reset to Title Screen?" : "Quit to Desktop?");
             ImGui::Spacing();
-            ImGui::TextWrapped("Are you sure you want to exit the game?");
+            ImGui::TextWrapped(resetting ? "End the current run and return to the title screen? Unsaved progress will be lost." : "Are you sure you want to exit the game?");
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             const float button_w=(ImGui::GetContentRegionAvail().x-16.0f)*.5f;
             for (int i=0;i<2;++i) {
@@ -476,7 +478,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         }
         ImGui::SameLine();
         const char *close_label = "Resume";
-        if(kickle) { ImGui::TextDisabled("v0.0.2"); ImGui::SameLine(); }
+        if(kickle) { ImGui::TextDisabled("v0.0.3"); ImGui::SameLine(); }
         const float close_w = touch_friendly
             ? std::max(320.0f, ImGui::CalcTextSize(close_label).x +
                                    theme.spacing_lg * 2.0f)

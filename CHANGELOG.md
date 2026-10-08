@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.3 — October 7, 2026
+
+- Update launcher, game window, and menu version labels to v0.0.3.
+- Include sprite motion interpolation and widescreen rendering updates.
+- Update display filter selection and fast-forward behavior.
+- Add reset-to-title confirmation and clearer achievement descriptions.
+- Remove Gale Festival from the game mode menu.
+
+Build completed. Gameplay changes await player confirmation.
+
 ## v0.0.2 update — October 6, 2026
 
 - Add direct selection of all 30 post-game Special Zones.

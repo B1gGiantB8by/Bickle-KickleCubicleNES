@@ -246,7 +246,7 @@ int cyc_ui_launcher(CycSettings *settings, const char *settings_path, const CycH
     char title[300];
     snprintf(title, sizeof(title), "%s - Launcher", name);
 #ifdef CYC_KICKLE_BRANDING
-    snprintf(title, sizeof(title), "Kickle Cubicle v0.0.2");
+    snprintf(title, sizeof(title), "Kickle Cubicle v0.0.3");
     static char icon_path[1024];
     char *base_path = SDL_GetBasePath();
     snprintf(icon_path,sizeof(icon_path),"%sassets/kickle/icon.png",base_path ? base_path : "");

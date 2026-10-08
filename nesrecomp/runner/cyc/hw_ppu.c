@@ -28,6 +28,14 @@ HwPpu    ppu;
 uint16_t hw_frame_index[256 * 240];
 CycLine  hw_frame_lines[240];
 uint8_t  hw_frame_bg[256 * 240];
+/* Presentation-only observation; never part of machine state or timing. */
+static uint32_t frame_background[256 * 240];
+static uint8_t background_color[4];
+const uint32_t *cyc_frame_background_argb(void) { return frame_background; }
+static uint8_t frame_sprite_oam[256];
+static uint32_t frame_sprite_pixels[512 * 16];
+const uint8_t *cyc_frame_sprite_oam(void) { return frame_sprite_oam; }
+const uint32_t *cyc_frame_sprite_argb(void) { return frame_sprite_pixels; }
 
 const CycLine *cyc_frame_lines(void) { return hw_frame_lines; }
 const uint8_t *cyc_frame_bg_opaque(void) { return hw_frame_bg; }
@@ -41,6 +49,36 @@ static inline void capture_line(int sl)
     l->ctrl = (uint8_t)(ppu.sprite_table << 3 | ppu.bg_table << 4 | ppu.sprite16 << 5);
     l->mask = (uint8_t)(ppu.greyscale | ppu.show_bg8 << 1 | ppu.show_spr8 << 2 | ppu.show_bg << 3 | ppu.show_spr << 4 |
                         ppu.emphasis << 5);
+    /* Observe the rendered frame, before next-frame VBlank DMA or CHR/palette
+     * updates. Read mapped CHR directly without changing PPU bus signals. */
+    if (sl == 0) {
+        memcpy(frame_sprite_oam, ppu.oam, sizeof(frame_sprite_oam));
+        memset(frame_sprite_pixels, 0, sizeof(frame_sprite_pixels));
+    }
+    if (!ppu.show_spr) return;
+    for (int slot = 0; slot < 64; ++slot) {
+        const uint8_t *o = frame_sprite_oam + slot * 4;
+        int height = ppu.sprite16 ? 16 : 8;
+        int r = sl - (o[0] + 1);
+        if (o[0] >= 0xef || r < 0 || r >= height) continue;
+        int row = (o[2] & 0x80) ? height - 1 - r : r;
+        unsigned pattern = ppu.sprite16
+            ? ((o[1] & 1) ? 0x1000 : 0) + (o[1] & 0xfe) * 16 + (row >= 8 ? 16 : 0)
+            : (ppu.sprite_table << 12) + o[1] * 16;
+        unsigned li = hw_cart_chr_index(pattern + (row & 7));
+        unsigned hi = hw_cart_chr_index(pattern + (row & 7) + 8);
+        if (!hw_cart.chr || (!hw_cart.chr_ram && (li >= hw_cart.chr_len || hi >= hw_cart.chr_len))) continue;
+        uint8_t lo = hw_cart.chr[li], high = hw_cart.chr[hi];
+        for (int c = 0; c < 8 && o[3] + c < 256; ++c) {
+            if (o[3] + c < 8 && !ppu.show_spr8) continue;
+            int bit = (o[2] & 0x40) ? c : 7 - c;
+            int v = ((lo >> bit) & 1) | (((high >> bit) & 1) << 1);
+            if (!v) continue;
+            unsigned color = ppu.palette[16 + (o[2] & 3) * 4 + v] & 0x3f;
+            if (ppu.greyscale) color &= 0x30;
+            frame_sprite_pixels[r * 512 + slot * 8 + c] = hw_palette_argb[color | ppu.emphasis << 6];
+        }
+    }
 }
 
 /* Dots an open-bus bit of the PPU's CPU-side data bus holds a 1. */
@@ -683,6 +721,7 @@ static void compute_pixel(void)
         if (color == 0) pal = 0;
     }
     hw_frame_bg[ppu.scanline * 256 + ppu.dot - 1] = color != 0;
+    background_color[0] = ppu.palette[pal << 2 | color] & 0x3F;
     if (ppu.show_spr && (ppu.dot > 8 || ppu.show_spr8) && !sprite_units_idle()) {
         int i;
         uint8_t sc = 0;
@@ -716,6 +755,7 @@ static void compute_pixel(void)
         corrupt_palettes(color);
     }
     ppu.color[0] = ppu.palette[addr] & 0x3F;
+    if (!rendering()) background_color[0] = ppu.color[0];
 }
 
 /* The chosen color reaches the video output three dots later, where greyscale
@@ -739,6 +779,9 @@ static void output_pixel(void)
         uint8_t c = ppu.color[3];
         if (ppu.greyscale) c &= 0x30;
         hw_frame_index[sl * 256 + dot - 4] = (uint16_t)(c | ppu.emphasis << 6);
+        uint8_t bg = background_color[3];
+        if (ppu.greyscale) bg &= 0x30;
+        frame_background[sl * 256 + dot - 4] = hw_palette_argb[bg | ppu.emphasis << 6];
     }
 }
 
@@ -931,6 +974,9 @@ static void blank_dot(void)
     ppu.color[3] = ppu.color[2];
     ppu.color[2] = ppu.color[1];
     ppu.color[1] = ppu.color[0];
+    background_color[3] = background_color[2];
+    background_color[2] = background_color[1];
+    background_color[1] = background_color[0];
     if (line) {
         if (dot >= 1 && dot <= 256) {
             if (sl < 240) {
@@ -942,6 +988,7 @@ static void blank_dot(void)
                     if ((addr & 3) == 0) addr &= 0x0F;
                 }
                 ppu.color[0] = ppu.palette[addr] & 0x3F;
+                background_color[0] = ppu.color[0];
             }
             uint64_t counters;
             memcpy(&counters, ppu.spr_x, sizeof(counters));
@@ -952,6 +999,7 @@ static void blank_dot(void)
             uint8_t c = ppu.color[3];
             if (ppu.greyscale) c &= 0x30;
             hw_frame_index[sl * 256 + dot - 4] = (uint16_t)(c | ppu.emphasis << 6);
+            frame_background[sl * 256 + dot - 4] = hw_palette_argb[c | ppu.emphasis << 6];
         }
     }
     io_bus_decay();
@@ -1067,6 +1115,9 @@ static void general_dot(void)
     ppu.color[3] = ppu.color[2];
     ppu.color[2] = ppu.color[1];
     ppu.color[1] = ppu.color[0];
+    background_color[3] = background_color[2];
+    background_color[2] = background_color[1];
+    background_color[1] = background_color[0];
     if (render_line() || (sl == 240 && dot == 0)) {
         if ((dot >= 1 && dot <= 256) || (dot >= 321 && dot <= 336)) {
             if (eval_rendering()) bg_fetch();

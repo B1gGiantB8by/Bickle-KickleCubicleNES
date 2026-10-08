@@ -174,6 +174,10 @@ const CycLine *cyc_frame_lines(void);        /* [240] */
 /* [256 * 240]: 1 where the background's pixel was opaque (a nonzero pattern
  * value with the background shown there), under any sprite. */
 const uint8_t *cyc_frame_bg_opaque(void);
+/* The same scanline/palette output with sprites omitted (presentation only). */
+const uint32_t *cyc_frame_background_argb(void);
+const uint8_t *cyc_frame_sprite_oam(void);
+const uint32_t *cyc_frame_sprite_argb(void);
 /* Audio: signed 16-bit mono at the given rate. cyc_audio_enable returns false
  * if the machine has no audio output. */
 bool   cyc_audio_enable(int sample_rate);

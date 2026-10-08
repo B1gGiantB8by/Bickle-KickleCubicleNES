@@ -99,6 +99,9 @@ static int boss_entry_pending;
 static int gale_mode, selected_gale;
 static void apply_gale_mode(void)
 {
+    /* Retain the old state field for compatibility, but retired remix
+     * settings and snapshots must never reactivate the patch. */
+    gale_mode = selected_gale = 0;
     if(!hw_cart.prg || hw_cart.prg_len != 131072) return;
     for(unsigned i=0;i<sizeof(gale_changes)/sizeof(gale_changes[0]);++i)
         hw_cart.prg[gale_changes[i].offset] = gale_mode ? gale_changes[i].gale : gale_changes[i].original;
@@ -109,6 +112,7 @@ static int room_template_ready;
 static uint16_t room_pattern[256 * 240];
 static uint8_t room_palette[256 * 240], room_bit[256 * 240];
 static void snapshot_room(void);
+void kickle_motion_reset(void);
 /* Rendering/boot state must travel with the machine when rewinding. User
  * preferences (cheats, camera and display settings) remain current. */
 static int kickle_state_get(uint8_t *buf, int cap)
@@ -129,6 +133,7 @@ static int kickle_state_validate(const uint8_t *buf, int len)
 }
 static int kickle_state_set(const uint8_t *buf, int len)
 {
+    kickle_motion_reset();
     int v[10]={0};
     if(!kickle_state_validate(buf,len)) return 0;
     memcpy(v,buf,len);
@@ -166,6 +171,10 @@ static int boss_phase_hook(uint16_t addr)
 static const int level_limits[] = {17, 17, 16, 17, 30};
 #include "kickle_achievements.inc"
 #include "kickle_filters.inc"
+/* High-refresh presentation retired; keep reset hooks harmless for old states. */
+int kickle_motion_active(void) { return 0; }
+void kickle_motion_reset(void) {}
+void kickle_motion_draw(SDL_Renderer *r,const uint32_t *p,int w,int h,float a) { (void)r; (void)p; (void)w; (void)h; (void)a; }
 static const char *const world_names[] = {"Garden Land", "Fruit Land", "Cake Land", "Toy Land", "Special Zones"};
 static int level_hook(uint16_t addr)
 {
@@ -242,7 +251,7 @@ static void level_frame(void *ctx)
         cyc_power_on(0);
         cyc_run_power_on();
         apply_gale_mode();
-    
+
         toy_water_ready = have_water = uncertain_frames = 0;
         boot_frame = 0;
         if (skip_title_requested) {
@@ -401,11 +410,10 @@ const uint32_t *kickle_flat_present(int *w, int *h)
     const uint32_t *frame = cyc_render_present(w, h);
     const uint32_t *native = cyc_frame_argb();
     if (*w > 2048 || *h != 240) return frame;
-    if ((boss_presentation == 2 && cyc_mod_peek(0x010A) == 1) ||
-        (!boss_presentation && cyc_mod_peek(0x010A) == 4 &&
-         (cyc_mod_peek(0x010C) == 17 || cyc_mod_peek(0x010C) == 27))) {
-        /* The second boss and Special Zones 18/28 exceed eight OAM sprites per row.
-         * Present all submitted sprites without changing PPU/game timing. */
+    {
+        /* Present all submitted sprites in every scene without the NES
+         * eight-sprites-per-row display limit. Keep PPU/game timing intact
+         * and run the transition border cleanup after drawing sprites. */
         static uint8_t background[2048 * 240];
         int x0=(*w-256)/2;
         memcpy(cleaned,frame,(size_t)*w * *h * sizeof(uint32_t));
@@ -414,6 +422,19 @@ const uint32_t *kickle_flat_present(int *w, int *h)
         for (int y=0; y<240; ++y)
             memcpy(background+y * *w+x0,opaque+y*256,256);
         cyc_render_sprites(cleaned,*w,*h,x0,background,NULL,NULL);
+        frame = cleaned;
+    }
+    /* These outer nametable columns contain wipe scratch tiles. Keep them
+     * hidden throughout native puzzle presentation, including transition
+     * boundaries where there are no black bands to detect yet. */
+    if (!enabled && !boss_presentation) {
+        int x0=(*w-256)/2;
+        if (frame != cleaned)
+            memcpy(cleaned,frame,(size_t)*w * *h * sizeof(uint32_t));
+        for (int y=0;y<240;++y) for (int x=0;x<8;++x) {
+            cleaned[y * *w+x0+x]=0xff000000;
+            cleaned[y * *w+x0+248+x]=0xff000000;
+        }
         return cleaned;
     }
     if (boss_presentation) return frame;
@@ -438,11 +459,30 @@ const uint32_t *kickle_flat_present(int *w, int *h)
      * They need not match each other and can contain platform fragments.
      * The compositor clears have_water on maps; the HUD ends this cleanup. */
     int rebuilding = !clearing && hud<15 && blue_samples>=224 && have_water;
-    if (!clearing && !rebuilding) return frame;
-    memcpy(cleaned, frame, (size_t)*w * *h * sizeof(uint32_t));
+    /* Native-width wipes leave black horizontal bands around the surviving
+     * board. Detect that final picture, not live RAM or a particular edge
+     * color: scanline snapshots can belong to the frame before RAM advances.
+     * This applies equally to closing and opening wipes, including the fully
+     * black midpoint. Normal puzzle play has no such black horizontal band. */
+    int black_rows=0;
+    for(int y=0;y<240;++y) {
+        int row_black=0;
+        for(int x=8;x<248;++x) row_black+=!(native[y*256+x]&0xffffff);
+        black_rows+=row_black>=232;
+    }
+    int respawn_gutter = *w==256 &&
+        (clearing || (black_rows>=2 && blue_samples>=8));
+    if (!clearing && !rebuilding && !respawn_gutter) return frame;
+    if (frame != cleaned)
+        memcpy(cleaned, frame, (size_t)*w * *h * sizeof(uint32_t));
     int x0 = (*w-256)/2;
     for (int y = 0; y < 240; ++y) {
-        if (clearing) {
+        if(respawn_gutter) {
+            for(int x=0;x<8;++x) {
+                cleaned[y * *w+x0+x]=0xff000000;
+                cleaned[y * *w+x0+248+x]=0xff000000;
+            }
+        } else if (clearing) {
             cleaned[y * *w + x0] = 0xff000000;
             cleaned[y * *w + x0 + 255] = 0xff000000;
         } else {
@@ -1021,7 +1061,13 @@ static int checkbox_get(void *ctx, const RecompRuntimeUiItem *item, int *value)
 }
 static int checkbox_set(void *ctx, const RecompRuntimeUiItem *item, int value)
 {
-    if(!strcmp(item->key,"kickle.filter")) { if(value<0 || value>4)return 0; kickle_filter_mode=value; return 1; }
+
+    if(!strcmp(item->key,"kickle.filter")) {
+        if(value<0 || value>4)return 0;
+        kickle_filter_mode=value;
+
+        return 1;
+    }
     if(!strcmp(item->key,"kickle.achievements_enabled")) {
         achievements_enabled=value!=0;
         achievement_reset();
@@ -1061,7 +1107,7 @@ static int checkbox_set(void *ctx, const RecompRuntimeUiItem *item, int value)
 static void load_setting(void *ctx, const char *key, const char *value)
 {
     (void)ctx;
-    if (!strcmp(key, "GaleFestival")) gale_mode=selected_gale=value[0]=='1';
+    if (!strcmp(key, "GaleFestival")) gale_mode=selected_gale=0;
     if (!strcmp(key, "AchievementsEnabled")) achievements_enabled=value[0]=='1';
     if (!strcmp(key,"DisplayFilter")) { int v=atoi(value); if(v>=0 && v<=4) kickle_filter_mode=v; }
     if (!strcmp(key, "WidescreenEnabled")) enabled = value[0] == '1';
@@ -1087,14 +1133,10 @@ static void save_setting(void *ctx, FILE *f)
     fprintf(f, "IsometricEnabled = %d\n", kickle_voxel_enabled);
     fprintf(f, "GaleFestival = %d\n", gale_mode);
 }
-static const char *const game_modes[] = {"Original", "Gale Festival"};
 static const RecompRuntimeUiItem items[] = {
+    { .key="kickle.start_mode", .section="Additional Modes", .label="Start normal game",
+      .description="Start a fresh Garden Land level 1 run.", .type=RECOMP_RUNTIME_UI_ACTION },
     { .key="kickle.filter", .section="Display Options", .label="Display Filter", .description="Off, CRT Soft, LCD Grid, Sharp or Warm Composite. Adapted from the shared SNES shader presets.", .type=RECOMP_RUNTIME_UI_CHOICE, .minimum=0, .maximum=4, .step=1, .choices=kickle_filter_names, .choice_count=5 },
-    { .key="kickle.game_mode", .section="Additional Modes", .label="Mode",
-      .description="Choose Original or the Gale Festival level remix. Apply by starting a fresh run below.",
-      .type=RECOMP_RUNTIME_UI_CHOICE, .minimum=0, .maximum=1, .step=1, .choices=game_modes, .choice_count=2 },
-    { .key="kickle.start_mode", .section="Additional Modes", .label="Start selected mode",
-      .description="Replaces the current run and starts Garden Land level 1.", .type=RECOMP_RUNTIME_UI_ACTION },
     { .key="kickle.freeze_timer", .section="Cheats", .label="Freeze Timer",
       .description="Stop the level countdown at its current value. Completion time bonuses still count down normally. Unavailable in hardcore mode.", .type=RECOMP_RUNTIME_UI_BOOL, .maximum=1, .step=1 },
     { .key="kickle.invincibility", .section="Cheats", .label="Invincibility",
@@ -1119,8 +1161,8 @@ static const RecompRuntimeUiItem items[] = {
       .description = "Fixed raised-board view. Original gameplay controls remain active.",
       .type = RECOMP_RUNTIME_UI_BOOL, .minimum = 0, .maximum = 1, .step = 1 },
 #endif
-    { .key = "kickle.widescreen", .section = "Display Options", .label = "Enable widescreen",
-      .description = "Extend the surrounding water while preserving the original puzzle board.",
+    { .key = "kickle.widescreen", .section = "Display Options", .label = "Enable widescreen (Experimental)",
+      .description = "Extend the surrounding water while preserving the original puzzle board. Experimental: visual issues may still occur.",
       .type = RECOMP_RUNTIME_UI_BOOL, .minimum = 0, .maximum = 1, .step = 1 },
     { .key = "kickle.world", .section = "Level select", .label = "World",
       .type = RECOMP_RUNTIME_UI_CHOICE, .minimum = 0, .maximum = 4,
@@ -1170,7 +1212,7 @@ static int level_action(void *ctx, const RecompRuntimeUiItem *item)
         hardcore_status=selected_hardcore=0;
         boss_rush=0; selected_world=0; selected_level=1;
         pending_level=reset_queued=1;
-    
+
         if(cyc_ui_menu_open()) cyc_ui_toggle_menu();
         return 1;
     }
@@ -1182,7 +1224,7 @@ static int level_action(void *ctx, const RecompRuntimeUiItem *item)
     if (!strcmp(item->key, "kickle.start_mode") || !strcmp(item->key,"kickle.start_hardcore")) {
         hardcore_status=selected_hardcore ? 1 : 0;
         if(hardcore_status) infinite_lives=invincibility=freeze_timer=0;
-    
+
         gale_mode=selected_gale; boss_rush=0; selected_world=0; selected_level=1;
         pending_level=reset_queued=1;
         if(cyc_ui_menu_open()) cyc_ui_toggle_menu();
