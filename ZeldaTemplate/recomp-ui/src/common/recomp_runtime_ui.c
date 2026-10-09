@@ -148,9 +148,9 @@ void recomp_runtime_ui_adjust_current(RecompRuntimeUi *ui, int direction,
     if (!item || !recomp_runtime_ui_item_enabled(ui, item)) return;
     if (item->type == RECOMP_RUNTIME_UI_ACTION) {
         if (!activate || repeat || !ui->config.callbacks.run_action) return;
-        if (item->key && (!strcmp(item->key, "cyc.quit") || !strcmp(item->key, "kickle.reset_title"))) {
+        if (item->key && (!strcmp(item->key, "cyc.quit") || !strcmp(item->key, "kickle.reset_title") || !strcmp(item->key, "kickle.reset_achievements"))) {
             ui->quit_confirmation = item;
-            ui->quit_yes = 1;
+            ui->quit_yes = strcmp(item->key, "kickle.reset_achievements") != 0;
             return;
         }
         if (ui->config.callbacks.run_action(ui->config.callbacks.context, item))

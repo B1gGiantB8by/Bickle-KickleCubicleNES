@@ -291,6 +291,7 @@ static int get_value(void *ctx, const RecompRuntimeUiItem *it, int *out)
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_LINEAR_FILTER)) *out = s->linear_filter;
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_AUDIO)) *out = s->audio_enabled;
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_VOLUME)) *out = s->volume;
+    else if (is_key(it, "launcher.enabled")) *out = !s->skip_launcher;
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_VIEW_MODE)) *out = x && x->get_view_mode ? x->get_view_mode(x->ctx) : s->view_mode;
     else if (mod_row(it)) return mod_get(mod_row(it), out);
     else if (is_key(it, "cyc.disk.side")) {
@@ -315,6 +316,7 @@ static int set_value(void *ctx, const RecompRuntimeUiItem *it, int v)
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_LINEAR_FILTER)) s->linear_filter = v != 0;
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_AUDIO)) s->audio_enabled = v != 0;
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_VOLUME)) s->volume = v < 0 ? 0 : v > 100 ? 100 : v;
+    else if (is_key(it, "launcher.enabled")) s->skip_launcher = !v;
     else if (is_key(it, RECOMP_RUNTIME_UI_KEY_VIEW_MODE)) {
         if (!x || !x->set_view_mode || !x->set_view_mode(x->ctx, v)) return 0;
         s->view_mode = v;
@@ -337,6 +339,7 @@ static int set_value(void *ctx, const RecompRuntimeUiItem *it, int v)
 
 static int run_action(void *ctx, const RecompRuntimeUiItem *it)
 {
+    if (is_key(it, "cyc.controls")) { cyc_ui_open_controls(); return 1; }
     (void)ctx;
     const CycHostExtras *x = s_host.extras;
     long f = s_host.frames_done();
@@ -417,6 +420,9 @@ RecompRuntimeUi *cyc_ui_menu_create(const CycUiHost *host)
 {
     s_host = *host;
     s_item_count = 0;
+    static const char *const launcher_choices[] = { "Disabled", "Enabled" };
+    add("launcher.enabled", "Display Options", "Launcher", "Show the launcher when starting the game. Takes effect on the next launch.",
+        RECOMP_RUNTIME_UI_CHOICE, 0, 1, 1, launcher_choices, 2, NULL);
     const CycHostExtras *x = host->extras;
     if (host->fds) {
         unsigned sides = cyc_fds_side_count();
@@ -444,6 +450,8 @@ RecompRuntimeUi *cyc_ui_menu_create(const CycUiHost *host)
                 HLE_CHOICES, 3, HLE_VALUES);
         }
     }
+    add("cyc.controls", "Controls", "Control Setup", "Configure keyboard and controller bindings. A: Ice pillars. B: Freeze/Push.",
+        RECOMP_RUNTIME_UI_ACTION, 0, 0, 0, NULL, 0, NULL);
     for (int i = 0; i < CYC_SC_COUNT; ++i) {
         if (i == CYC_SC_DISK && !host->fds) continue;
         snprintf(s_shortcut_key[i], sizeof(s_shortcut_key[i]), "cyc.shortcut.%d", i);
@@ -503,10 +511,32 @@ void cyc_ui_menu_refresh(void)
     if (s_ui) refresh();
 }
 
-bool cyc_ui_menu_open(void) { return s_ui && recomp_runtime_ui_is_open(s_ui); }
+bool cyc_ui_menu_open(void) { return cyc_ui_controls_is_open() || cyc_ui_achievements_is_open() || (s_ui && recomp_runtime_ui_is_open(s_ui)); }
+bool cyc_ui_setting_get(const char *key, int *value)
+{
+    if (!s_ui || !s_host.settings) return false;
+    RecompRuntimeUiItem item = { .key = key };
+    return get_value(NULL, &item, value) != 0;
+}
+bool cyc_ui_setting_set(const char *key, int value)
+{
+    if (!s_ui || !s_host.settings) return false;
+    RecompRuntimeUiItem item = { .key = key };
+    if (!set_value(NULL, &item, value)) return false;
+    save(NULL);
+    return true;
+}
+void cyc_ui_save_settings(void) { if (s_ui) save(NULL); }
+void cyc_ui_quit(void) { if (s_ui && s_host.quit) s_host.quit(); }
+bool cyc_ui_load_save_state(void)
+{
+    return s_ui && s_host.load_state && s_host.load_state();
+}
 
 void cyc_ui_toggle_menu(void)
 {
+    if (cyc_ui_controls_is_open()) { cyc_ui_controls_nav(RECOMP_RUNTIME_UI_INPUT_BACK); return; }
+    if (cyc_ui_achievements_is_open()) { cyc_ui_achievements_nav(RECOMP_RUNTIME_UI_INPUT_BACK); return; }
     if (!s_ui) return;
     if (recomp_runtime_ui_is_open(s_ui)) recomp_runtime_ui_handle_input(s_ui, RECOMP_RUNTIME_UI_INPUT_TOGGLE, 1, 0);
     else recomp_runtime_ui_open(s_ui);
@@ -514,6 +544,8 @@ void cyc_ui_toggle_menu(void)
 
 void cyc_ui_nav(int input, bool repeat)
 {
+    if (cyc_ui_controls_is_open()) { cyc_ui_controls_nav(input); return; }
+    if (cyc_ui_achievements_is_open()) { cyc_ui_achievements_nav(input); return; }
     if (s_ui) recomp_runtime_ui_handle_input(s_ui, (RecompRuntimeUiInput)input, 1, repeat ? 1 : 0);
 }
 

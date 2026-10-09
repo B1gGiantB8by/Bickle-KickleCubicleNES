@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.4 — October 8, 2026
+
+- Update launcher, game window, and menu labels to v0.0.4.
+- Include the latest title menu, controls, launcher, audio, and rendering updates.
+- Refresh the achievement sound.
+
+The project owner reports everything tested and looking good.
+
 ## v0.0.3 — October 7, 2026
 
 - Update launcher, game window, and menu version labels to v0.0.3.

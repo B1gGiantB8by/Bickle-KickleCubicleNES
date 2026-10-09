@@ -523,6 +523,7 @@ void hw_set_controller(int port, uint8_t buttons)
 {
     apu.buttons[port & 1] = buttons;
 }
+uint8_t hw_get_controller(int port) { return apu.buttons[port & 1]; }
 
 /* ------------------------------------------------------------------------- */
 /* Clock                                                                     */

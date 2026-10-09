@@ -18,12 +18,15 @@
  * matching water rows on both sides; keep maps and title screens native. */
 static int mode;
 static int enabled = 1;
+int kickle_bezel_enabled;
 static int have_water, uncertain_frames, toy_water_ready;
 static int selected_world, selected_level = 1, pending_level, reset_queued, boot_frame;
 static int skip_title_requested;
 static int infinite_lives, invincibility, freeze_timer, boss_rush;
 static int selected_hardcore, hardcore_status; /* 0 normal, 1 running, 2 failed, 3 cleared */
 static int achievement_hook(uint16_t address);
+static void title_menu_frame(void);
+static void title_menu_reset(void);
 static bool assists_allowed(void *ctx) { (void)ctx; return hardcore_status == 0; }
 /* Suppress only the death bit at verified collision stores. Preserve all
  * other flags and run the original STA instruction with its normal timing. */
@@ -133,6 +136,8 @@ static int kickle_state_validate(const uint8_t *buf, int len)
 }
 static int kickle_state_set(const uint8_t *buf, int len)
 {
+    if (enabled) kickle_bezel_enabled=0;
+    title_menu_reset();
     kickle_motion_reset();
     int v[10]={0};
     if(!kickle_state_validate(buf,len)) return 0;
@@ -226,6 +231,7 @@ static int boss_room_hook(uint16_t addr)
 static void level_frame(void *ctx)
 {
     (void)ctx;
+    title_menu_frame();
     kickle_voxel_controls();
     apply_invincibility();
 
@@ -248,6 +254,8 @@ static void level_frame(void *ctx)
     }
     if (reset_queued) {
         reset_queued = 0;
+        if (enabled) kickle_bezel_enabled=0;
+    title_menu_reset();
         cyc_power_on(0);
         cyc_run_power_on();
         apply_gale_mode();
@@ -256,10 +264,13 @@ static void level_frame(void *ctx)
         boot_frame = 0;
         if (skip_title_requested) {
             skip_title_requested = 0;
-            /* Let the original boot/title code initialize RAM, banks and CHR,
-             * but do not present those frames. Stop when the world-map loader
-             * applies the selected world and puzzle; its normal reveal follows. */
-            while (pending_level && boot_frame < 1800) {
+            /* Keep native initialization hidden. Boss Rush also waits for
+             * the final room's completion hook, so the old title and world
+             * map cannot be presented before the boss opening starts. */
+            int boot_limit = boss_rush ? 6000 : 1800;
+            while ((pending_level || (boss_rush && (boss_entry_pending ||
+                   (!boss_presentation && cyc_mod_peek(0x0400) != 0x41)))) &&
+                   boot_frame < boot_limit) {
                 int f = boot_frame++;
                 cyc_set_controller(0, (f == 120 || f == 121 || f == 300 ||
                                       f == 301 || f == 600 || f == 601) ? 0x10 : 0);
@@ -357,6 +368,7 @@ static bool level_option(void *ctx, const char *name, const char *value)
         int world;
         if (sscanf(value, "%d", &world) != 1 || world < 1 || world > 4) return false;
         selected_world = world - 1; selected_level = 1;
+        skip_title_requested = 1;
         boss_rush = pending_level = reset_queued = 1;
         return true;
     }
@@ -1037,10 +1049,17 @@ static bool set_mode(void *ctx, int value)
                        : value == RECOMP_RUNTIME_UI_VIEW_ADAPTIVE ? NES_VIDEO_FIT : NES_VIDEO_STOCK);
     return true;
 }
+int kickle_bezel_active(void) { return kickle_bezel_enabled && !enabled; }
+static int display_item_enabled(void *ctx, const RecompRuntimeUiItem *item)
+{
+    (void)ctx;
+    return strcmp(item->key, "kickle.bezel") || !enabled;
+}
 static int checkbox_get(void *ctx, const RecompRuntimeUiItem *item, int *value)
 {
     (void)ctx;
     if(achievement_value(item,value)) return 1;
+    if(!strcmp(item->key,"kickle.bezel")) { *value=kickle_bezel_enabled; return 1; }
     if(!strcmp(item->key,"kickle.filter")) { *value=kickle_filter_mode; return 1; }
     if(!strcmp(item->key,"kickle.achievements_enabled")) { *value=achievements_enabled; return 1; }
     if (!strcmp(item->key, "kickle.freeze_timer")) { *value=freeze_timer; return 1; }
@@ -1062,6 +1081,7 @@ static int checkbox_get(void *ctx, const RecompRuntimeUiItem *item, int *value)
 static int checkbox_set(void *ctx, const RecompRuntimeUiItem *item, int value)
 {
 
+    if(!strcmp(item->key,"kickle.bezel")) { if (value && enabled) return 0; kickle_bezel_enabled=value!=0; return 1; }
     if(!strcmp(item->key,"kickle.filter")) {
         if(value<0 || value>4)return 0;
         kickle_filter_mode=value;
@@ -1100,6 +1120,7 @@ static int checkbox_set(void *ctx, const RecompRuntimeUiItem *item, int value)
     }
     if (strcmp(item->key, "kickle.widescreen")) return 0;
     enabled = value != 0;
+    if (enabled) kickle_bezel_enabled=0;
     if (enabled && mode == RECOMP_RUNTIME_UI_VIEW_NATIVE) mode = RECOMP_RUNTIME_UI_VIEW_FIXED_16_9;
     set_mode(ctx, mode);
     return 1;
@@ -1109,6 +1130,7 @@ static void load_setting(void *ctx, const char *key, const char *value)
     (void)ctx;
     if (!strcmp(key, "GaleFestival")) gale_mode=selected_gale=0;
     if (!strcmp(key, "AchievementsEnabled")) achievements_enabled=value[0]=='1';
+    if (!strcmp(key,"BezelMode")) kickle_bezel_enabled=value[0]=='1';
     if (!strcmp(key,"DisplayFilter")) { int v=atoi(value); if(v>=0 && v<=4) kickle_filter_mode=v; }
     if (!strcmp(key, "WidescreenEnabled")) enabled = value[0] == '1';
     /* Hidden experimental mode: old preferences must not enable an option
@@ -1126,6 +1148,7 @@ static void save_setting(void *ctx, FILE *f)
     (void)ctx;
     fprintf(f, "WidescreenEnabled = %d\n", enabled);
     fprintf(f, "AchievementsEnabled = %d\n", achievements_enabled);
+    fprintf(f,"BezelMode = %d\n",kickle_bezel_enabled);
     fprintf(f,"DisplayFilter = %d\n",kickle_filter_mode);
     fprintf(f, "FreezeTimer = %d\n", freeze_timer);
     fprintf(f, "InfiniteLives = %d\n", infinite_lives);
@@ -1134,6 +1157,7 @@ static void save_setting(void *ctx, FILE *f)
     fprintf(f, "GaleFestival = %d\n", gale_mode);
 }
 static const RecompRuntimeUiItem items[] = {
+    { .key="kickle.bezel", .section="Display Options", .label="Bezel Mode", .description="Larger native game screen with a fitted TV frame. Available when widescreen is off.", .type=RECOMP_RUNTIME_UI_BOOL, .maximum=1, .step=1 },
     { .key="kickle.start_mode", .section="Additional Modes", .label="Start normal game",
       .description="Start a fresh Garden Land level 1 run.", .type=RECOMP_RUNTIME_UI_ACTION },
     { .key="kickle.filter", .section="Display Options", .label="Display Filter", .description="Off, CRT Soft, LCD Grid, Sharp or Warm Composite. Adapted from the shared SNES shader presets.", .type=RECOMP_RUNTIME_UI_CHOICE, .minimum=0, .maximum=4, .step=1, .choices=kickle_filter_names, .choice_count=5 },
@@ -1177,8 +1201,7 @@ static const RecompRuntimeUiItem items[] = {
 #include "kickle_achievement_list.inc"
 #undef ACH
     { .key="kickle.achievements_enabled", .section="Achievement Options", .label="Enable Achievements", .description="Allow local unlocks, cards and sounds.", .type=RECOMP_RUNTIME_UI_BOOL, .maximum=1, .step=1 },
-    { .key="kickle.reset_achievements", .section="Achievement Options", .label="Reset Achievements", .description="Select twice to erase local unlocks and attempt progress.", .type=RECOMP_RUNTIME_UI_ACTION },
-    { .key="kickle.cancel_achievement_reset", .section="Achievement Options", .label="Cancel Reset", .type=RECOMP_RUNTIME_UI_ACTION },
+    { .key="kickle.reset_achievements", .section="Achievement Options", .label="Reset Achievements", .description="Erase local unlocks and attempt progress after confirmation.", .type=RECOMP_RUNTIME_UI_ACTION },
     { .key="kickle.reset_title", .section="System", .label="Reset to Title Screen", .description="End the current run and return to the game's title screen.", .type=RECOMP_RUNTIME_UI_ACTION },
 };
 static int level_action(void *ctx, const RecompRuntimeUiItem *item)
@@ -1194,20 +1217,14 @@ static int level_action(void *ctx, const RecompRuntimeUiItem *item)
         return 1;
     }
     if(!strcmp(item->key,"kickle.reset_achievements")) {
-        if(!achievement_reset_pending) {
-            achievement_reset_pending=1;
-            cyc_ui_set_toast("Reset achievements?", "Select Reset again to erase all local unlocks.");
-        } else {
             achievement_reset_pending=0;
             achievement_earned=0;
             memset(achievement_dates,0,sizeof(achievement_dates));
             achievement_reset(); achievement_save();
             cyc_ui_achievement(NULL,NULL,0);
             cyc_ui_set_toast("Achievements reset", "All challenges can be earned again.");
-        }
         return 1;
     }
-    if(!strcmp(item->key,"kickle.cancel_achievement_reset")) { achievement_reset_pending=0; return 1; }
     if(!strcmp(item->key,"kickle.end_hardcore")) {
         hardcore_status=selected_hardcore=0;
         boss_rush=0; selected_world=0; selected_level=1;
@@ -1232,6 +1249,7 @@ static int level_action(void *ctx, const RecompRuntimeUiItem *item)
         return 1;
     }
     if (!strcmp(item->key, "kickle.start_boss_rush")) {
+        skip_title_requested = 1;
         gale_mode=selected_gale;
         boss_rush = 1;
         selected_world = 0;
@@ -1251,12 +1269,15 @@ static int level_action(void *ctx, const RecompRuntimeUiItem *item)
     cyc_ui_set_toast("Level select", "Starting a fresh run at the selected world and level");
     return 1;
 }
+#include "kickle_title_menu.inc"
 static const RecompRuntimeUiCallbacks callbacks = {
-    .get_value = checkbox_get, .set_value = checkbox_set,
+    .get_value = checkbox_get, .set_value = checkbox_set, .is_enabled = display_item_enabled,
     .run_action = level_action,
 };
 static void power_on(void *ctx)
 {
+    if (enabled) kickle_bezel_enabled=0;
+    title_menu_reset();
     achievement_reset();
     apply_gale_mode();
 
@@ -1320,7 +1341,7 @@ const CycHostExtras *cyc_host_extras(void)
         nes_mod_set_function_hook_enabled("kickle.rush.room-ready", 1);
     }
     static const CycHostExtras extras = {
-        .present = kickle_voxel_present,
+        .present = title_menu_present,
         .view_modes = RECOMP_RUNTIME_UI_VIEW_MODE_NATIVE |
                       RECOMP_RUNTIME_UI_VIEW_MODE_FIXED_16_9 |
                       RECOMP_RUNTIME_UI_VIEW_MODE_ADAPTIVE,

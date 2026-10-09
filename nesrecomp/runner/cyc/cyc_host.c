@@ -804,7 +804,9 @@ static void write_presentation(const char *base, long frame, uint64_t now_ms, bo
 {
     static uint32_t buf[CYC_VIDEO_MAX_WIDTH * 240];
     int w, h;
-    const uint32_t *pic = cyc_render_present(&w, &h);
+    const CycHostExtras *extras = cyc_host_extras();
+    const uint32_t *pic = extras && extras->present ? extras->present(extras->ctx, &w, &h) : NULL;
+    if (!pic) pic = cyc_render_present(&w, &h);
     memcpy(buf, pic, (size_t)w * (size_t)h * sizeof(uint32_t));
     CycDiskToast t;
     if (cyc_is_fds() && cyc_disk_action_toast(cyc_host_disk_action(), now_ms, &t)) {

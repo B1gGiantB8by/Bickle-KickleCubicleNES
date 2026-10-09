@@ -82,7 +82,10 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
         bool ready=launcher_model_can_launch(m);
         if(!ready) ImGui::BeginDisabled();
         if(ImGui::Button("Start Game",ImVec2(-1,56))) {
-            kickle_action(!kickle_value("kickle.hardcore") && kickle_value("kickle.boss_rush") ? "kickle.start_boss_rush" : "kickle.start_mode");
+            // A normal launch opens the cartridge title. Explicit challenge
+            // selections and Level Select still start their requested runs.
+            kickle_action(kickle_value("kickle.hardcore") ? "kickle.start_mode" :
+                kickle_value("kickle.boss_rush") ? "kickle.start_boss_rush" : "kickle.reset_title");
             m->action=LNG_ACTION_LAUNCH;
         }
         if(!ready) { ImGui::EndDisabled(); ImGui::TextWrapped("A matching original ROM is required to start."); }
@@ -164,20 +167,40 @@ static void draw_kickle_frontend(LauncherModel *m,const LauncherTheme &th) {
             if(strcmp(item.section,"Achievements")) continue;
             bool unlocked=kickle_value(item.key)!=0;
             ImGui::PushID(item.key);
-            ImGui::Selectable(item.label,false,0,ImVec2(0,26));
+                        int badge_id=kickle_badge_index(item.key);
+            if(badge_id>=0 && g_kickle_badges[badge_id][unlocked ? 1 : 0].id) {
+                ImGui::Image(tid(g_kickle_badges[badge_id][unlocked ? 1 : 0]),ImVec2(64,64));
+                ImGui::SameLine();
+            }
+            ImGui::BeginGroup();
+            ImGui::TextWrapped("%s",item.label);
             ImGui::TextColored(unlocked ? ImVec4(.4f,1.f,.5f,1) : ImVec4(.75f,.8f,.9f,1),"%s",unlocked ? "Unlocked" : "Locked");
             if(item.description && item.description[0]) {
                 ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(.88f,.93f,1.f,1.f));
                 ImGui::TextWrapped("Challenge: %s",item.description);
                 ImGui::PopStyleColor();
             }
-            ImGui::Separator(); ImGui::PopID();
+            ImGui::EndGroup(); ImGui::Separator(); ImGui::PopID();
         }
         ImGui::Dummy(ImVec2(0,24));
     }
     ImGui::EndChild();
+    ImGui::SetCursorPosX(310);
     ImGui::TextDisabled("D-pad / Stick: Navigate    A: Select    Mouse: Click");
-    ImGui::SameLine(); ImGui::TextDisabled("v0.0.3");
+    ImGui::SameLine(); ImGui::TextDisabled("v0.0.4");
+    ImGui::End();
+    // A launcher-wide option, anchored to the bottom-left of the screen.
+    ImGui::SetNextWindowPos(ImVec2(16,size.y-16),ImGuiCond_Always,ImVec2(0,1));
+    ImGui::Begin("##kickle-boot-option",nullptr,ImGuiWindowFlags_NoDecoration|
+        ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_AlwaysAutoResize);
+    bool skip=m->s.skip_launcher!=0;
+    bool skip_disabled=!launcher_model_can_launch(m) && !skip;
+    if(skip_disabled) ImGui::BeginDisabled();
+    if(ImGui::Checkbox("Skip launcher next time",&skip))
+        m->s.skip_launcher=skip ? 1 : 0;
+    if(skip_disabled) ImGui::EndDisabled();
+    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Boot directly into the loaded ROM on future launches.");
     ImGui::End();
     ImGui::PopStyleVar(3); ImGui::PopStyleColor(6);
     draw_standalone_builtin_rom_picker(m,th);

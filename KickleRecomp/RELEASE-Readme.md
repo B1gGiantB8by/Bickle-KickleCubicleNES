@@ -1,4 +1,4 @@
-# Kickle Cubicle v0.0.3
+# Kickle Cubicle v0.0.4
 
 An unofficial NES recompilation of Kickle Cubicle with controller navigation,
 optional widescreen, offline achievements, and additional game modes.
@@ -97,8 +97,8 @@ The clean package does not delete existing progress.
 
 ## Notes and credits
 
-This is an early v0.0.3 build. The release executable compiled successfully;
-this package has not received a separate gameplay verification pass. Some
+This is an early v0.0.4 build. The release executable compiled successfully;
+the project owner reports all gameplay tested and looking good. Some
 achievement conditions and experimental features may need further refinement.
 Save states should be kept with the version that created them.
 

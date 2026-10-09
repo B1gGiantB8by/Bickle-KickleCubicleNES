@@ -12,6 +12,7 @@
 
 #include "launcher_backend.h"
 #include "recomp_runtime_ui.h"
+#include "kickle_badges.h"
 #include "launcher_boot_timing.h"
 #include "launcher_gl.h"
 #include "launcher_input.h"
@@ -362,6 +363,7 @@ bool download_icon_button(const char* id, float side, bool enabled,
 // g_th moved to external linkage above the anonymous namespace (see note).
 
 LauncherTexture g_kickle_background, g_kickle_logo;
+LauncherTexture g_kickle_badges[23][2]{};
 LauncherTexture g_boxart, g_pad, g_pad_analog, g_pad_digital, g_brand, g_memcard;
 // Optional platform wordmark (SystemProfile.wordmark_image) — rendered in the
 // header instead of the platform text when the asset is present. Absent => text.
@@ -5344,6 +5346,10 @@ void draw_controller_config_view(LauncherModel* m, const LauncherTheme& th) {
     if (begin_panel("cfg_src", 0)) {
         ImGui::PushStyleColor(ImGuiCol_Text, col(th.accent2));
         ImGui::Text("%s %d", ui_text("CONTROLLER - PLAYER"), p + 1); ImGui::PopStyleColor(); ImGui::Spacing();
+        if(m->game_name && strstr(m->game_name,"Kickle Cubicle")) {
+            ImGui::TextColored(col(th.accent2),"A = Ice pillars    B = Freeze/Push");
+            ImGui::Spacing();
+        }
         row_label("Input source", th);
         ImGui::SetNextItemWidth(px(200));
         if (ImGui::BeginCombo("##csrc", ui_text(launcher_model_player_src_label(m, p)))) {
@@ -13918,6 +13924,10 @@ extern "C" LngAction launcher_backend_run(LauncherPlatform* p,
     if(g_game_items) {
         g_kickle_background=launcher_texture_load(asset("assets/kickle/background.tga").c_str());
         g_kickle_logo=launcher_texture_load(asset("assets/kickle/logo.tga").c_str());
+        for(int i=0;i<23;++i) for(int state=0;state<2;++state) {
+            char path[80]; kickle_badge_path(path,sizeof(path),i,state!=0);
+            g_kickle_badges[i][state]=launcher_texture_load(asset((std::string("assets/kickle/")+path).c_str()).c_str());
+        }
     }
     // Box art: per-game path from the ABI when given (multi-variant repos
     // stage one file per variant in a shared build dir), else the default.
@@ -14206,6 +14216,7 @@ extern "C" LngAction launcher_backend_run(LauncherPlatform* p,
     launcher_texture_free(&g_memcard);
     launcher_texture_free(&g_kickle_background);
     launcher_texture_free(&g_kickle_logo);
+    for(auto &pair:g_kickle_badges) for(auto &badge:pair) launcher_texture_free(&badge);
     launcher_texture_free(&g_wordmark);
     for (int i = 0; i < 5; ++i) launcher_texture_free(&g_cart[i]);
     launcher_texture_free(&g_tpak);

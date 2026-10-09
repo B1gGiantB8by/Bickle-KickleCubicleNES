@@ -416,6 +416,7 @@ void    dma_cycle(void);
 void    dma_end_of_cycle(void);
 
 void    hw_set_controller(int port, uint8_t buttons);
+uint8_t hw_get_controller(int port);
 
 /* Audio (hw_apu.c). */
 void    apu_audio_enable(bool on, int sample_rate);

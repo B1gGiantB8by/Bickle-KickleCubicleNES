@@ -174,8 +174,34 @@ int cyc_sdl_prelaunch(const char **rom_path, const char *cli_bios, NesFdsHleAsk 
         return 1;
     }
 #ifdef CYC_WITH_RECOMP_UI
+    /* The launcher remembers the verified selection beside config.ini.
+     * Recover it before bypassing the UI on an ordinary double-click. */
+    static char cached_rom[4096];
+    if (s_set.skip_launcher && (!*rom_path || !**rom_path)) {
+        char cache[1100];
+        snprintf(cache, sizeof(cache), "%s", s_set_path);
+        char *slash = strrchr(cache, '/'), *backslash = strrchr(cache, '\\');
+        if (!slash || (backslash && backslash > slash)) slash = backslash;
+        if (slash) snprintf(slash + 1, sizeof(cache) - (size_t)(slash + 1 - cache), "rom.cfg");
+        else snprintf(cache, sizeof(cache), "rom.cfg");
+        FILE *f = fopen(cache, "rb");
+        if (f) {
+            if (fgets(cached_rom, sizeof(cached_rom), f)) {
+                cached_rom[strcspn(cached_rom, "\r\n")] = 0;
+                if (cached_rom[0]) *rom_path = cached_rom;
+            }
+            fclose(f);
+        }
+    }
+    bool remembered_rom_exists = false;
+    if (*rom_path && **rom_path) {
+        FILE *f = fopen(*rom_path, "rb");
+        if (f) { remembered_rom_exists = true; fclose(f); }
+    }
+    const char *show = getenv("NESRECOMP_SHOW_LAUNCHER");
     const char *no = getenv("NESRECOMP_NO_LAUNCHER");
-    if (!(no && *no && *no != '0') && !s_set.skip_launcher) {
+    if (!(no && *no && *no != '0') &&
+        (!s_set.skip_launcher || !remembered_rom_exists || (show && *show && *show != '0'))) {
         /* The launcher's BIOS state runs the host's own lookup (cyc_fds_bios.h);
          * its pick comes back in s_set.fds_bios. PLAY commits the Mods
          * screen's selection (the provider's commit) before it returns. */
@@ -1000,13 +1026,34 @@ static bool dev_key(SDL_Scancode sc)
 
 /* ---- presentation ---- */
 
+/* Read the whole drawable even when the game's logical viewport is smaller. */
+static int read_drawable(uint32_t *pixels, int pitch)
+{
+    int lw, lh;
+    SDL_Rect viewport;
+    float xs, ys;
+    SDL_bool integer = SDL_RenderGetIntegerScale(s_ren);
+    SDL_RenderGetLogicalSize(s_ren,&lw,&lh);
+    SDL_RenderGetViewport(s_ren,&viewport);
+    SDL_RenderGetScale(s_ren,&xs,&ys);
+    SDL_RenderSetIntegerScale(s_ren,SDL_FALSE);
+    SDL_RenderSetLogicalSize(s_ren,0,0);
+    SDL_RenderSetScale(s_ren,1,1);
+    SDL_RenderSetViewport(s_ren,NULL);
+    int result=SDL_RenderReadPixels(s_ren,NULL,SDL_PIXELFORMAT_ARGB8888,pixels,pitch);
+    SDL_RenderSetLogicalSize(s_ren,lw,lh);
+    SDL_RenderSetIntegerScale(s_ren,integer);
+    SDL_RenderSetScale(s_ren,xs,ys);
+    SDL_RenderSetViewport(s_ren,&viewport);
+    return result;
+}
 static void present_shot(long frame)
 {
     int w = 0, h = 0;
     SDL_GetRendererOutputSize(s_ren, &w, &h);
     uint32_t *px = (uint32_t *)malloc((size_t)w * (size_t)h * 4);
     if (!px) return;
-    if (SDL_RenderReadPixels(s_ren, NULL, SDL_PIXELFORMAT_ARGB8888, px, w * 4) == 0) {
+    if (read_drawable(px, w * 4) == 0) {
         char path[1024];
         const char *base = s_present_out, *dot = strrchr(base, '.');
         int stem = (int)(dot ? (size_t)(dot - base) : strlen(base));
@@ -1020,6 +1067,51 @@ static void present_shot(long frame)
 extern int kickle_motion_active(void);
 extern void kickle_motion_reset(void);
 extern void kickle_motion_draw(SDL_Renderer *,const uint32_t *,int,int,float);
+extern int kickle_bezel_enabled;
+extern int kickle_bezel_active(void);
+static SDL_Texture *s_bezel_texture;
+static bool s_bezel_tried;
+/* The supplied 1536x1024 artwork has a clear opening at 320,210..1216,892.
+ * Keep all coordinates in the renderer's existing logical space, so resizing,
+ * fullscreen and the UI retain their usual input and scaling behavior. */
+static bool bezel_destination(SDL_Rect *dst, int w, int h)
+{
+    if (!kickle_bezel_active()) return false;
+    if (!s_bezel_tried) {
+        s_bezel_tried = true;
+        char *base = SDL_GetBasePath();
+        char path[2048];
+        snprintf(path, sizeof(path), "%sassets/kickle/bezel.bmp", base ? base : "");
+        SDL_free(base);
+        SDL_Surface *art = SDL_LoadBMP(path);
+        if (art) { s_bezel_texture = SDL_CreateTextureFromSurface(s_ren, art); SDL_FreeSurface(art); }
+        if (!s_bezel_texture) fprintf(stderr, "Bezel artwork unavailable: %s\n", SDL_GetError());
+    }
+    if (!s_bezel_texture) return false;
+    /* Artwork fills the physical drawable, independent of game letterboxing
+     * and integer scaling. Preserve the game's aspect inside its opening. */
+    SDL_GetRendererOutputSize(s_ren, &w, &h);
+    SDL_RenderSetIntegerScale(s_ren, SDL_FALSE);
+    SDL_RenderSetLogicalSize(s_ren, 0, 0);
+    SDL_RenderSetScale(s_ren, 1, 1);
+    SDL_RenderSetViewport(s_ren, NULL);
+    /* Stretch the surrounding artwork in nine regions. The TV's opening
+     * follows the native picture exactly rather than leaving black gutters. */
+    double fit = (double)(h * 80 / 100) / dst->h;
+    if ((double)(w * 78 / 100) / dst->w < fit)
+        fit = (double)(w * 78 / 100) / dst->w;
+    int gw = (int)(dst->w*fit), gh = (int)(dst->h*fit);
+    int gx = (w-gw)/2, gy = (h-gh)*65/100;
+    int sx[4] = {0,320,1216,1536}, sy[4] = {0,210,892,1024};
+    int dx[4] = {0,gx,gx+gw,w}, dy[4] = {0,gy,gy+gh,h};
+    for (int row=0; row<3; ++row) for (int col=0; col<3; ++col) {
+        SDL_Rect source = {sx[col],sy[row],sx[col+1]-sx[col],sy[row+1]-sy[row]};
+        SDL_Rect target = {dx[col],dy[row],dx[col+1]-dx[col],dy[row+1]-dy[row]};
+        SDL_RenderCopy(s_ren,s_bezel_texture,&source,&target);
+    }
+    *dst = (SDL_Rect){gx,gy,gw,gh};
+    return true;
+}
 static bool s_motion_present;
 static float s_motion_alpha;
 #endif
@@ -1063,12 +1155,24 @@ static void show(bool loading, const char *toast_title, const char *toast_body)
     if (h == 240) {
         dst.y = 8;
         dst.h = h - 16;
+#ifdef CYC_KICKLE_BRANDING
+        bezel_destination(&dst,w,h);
+#endif
         SDL_RenderCopy(s_ren, display_texture, &visible, &dst);
     } else {
+#ifdef CYC_KICKLE_BRANDING
+        bezel_destination(&dst,w,h);
+#endif
         SDL_RenderCopy(s_ren, display_texture, NULL, &dst);
     }
 #else
     SDL_RenderCopy(s_ren, display_texture, NULL, &dst);
+#endif
+#ifdef CYC_KICKLE_BRANDING
+    if (kickle_bezel_enabled && s_bezel_texture) {
+        SDL_RenderSetLogicalSize(s_ren, s_tex_w, logical_h());
+        SDL_RenderSetIntegerScale(s_ren, s_set.integer_scale ? SDL_TRUE : SDL_FALSE);
+    }
 #endif
 #ifdef CYC_DEV_UI
     if (s_bar) draw_drive_bar(loading);
@@ -1086,7 +1190,7 @@ static void show(bool loading, const char *toast_title, const char *toast_body)
         int ow = 0, oh = 0;
         SDL_GetRendererOutputSize(s_ren, &ow, &oh);
         uint32_t *px = (uint32_t *)malloc((size_t)ow * (size_t)oh * 4);
-        bool ok = px && SDL_RenderReadPixels(s_ren, NULL, SDL_PIXELFORMAT_ARGB8888, px, ow * 4) == 0 &&
+        bool ok = px && read_drawable(px, ow * 4) == 0 &&
                   cyc_write_png(s_ui_shot, px, ow, oh);
         free(px);
         char q[1100], fl[1200];
@@ -1163,7 +1267,7 @@ int cyc_sdl_main(const char *title_in, int scale)
     char *dot = strrchr(title, '.');
     if (dot && dot != title && base != title_in) *dot = 0;
 #ifdef CYC_KICKLE_BRANDING
-    snprintf(title,sizeof(title),"Kickle Cubicle v0.0.3");
+    snprintf(title,sizeof(title),"Kickle Cubicle v0.0.4");
 #endif
     SDL_SetMainReady();
     /* A hidden window never has the keyboard focus, and SDL drops controller
@@ -1463,6 +1567,10 @@ int cyc_sdl_main(const char *title_in, int scale)
     for (int i = 0; i < s_pad_count; ++i) SDL_GameControllerClose(s_pads[i]);
     if (s_vpad_joy) SDL_JoystickClose(s_vpad_joy);
     SDL_DestroyTexture(s_tex);
+#ifdef CYC_KICKLE_BRANDING
+    SDL_DestroyTexture(s_bezel_texture);
+    s_bezel_texture = NULL; s_bezel_tried = false;
+#endif
     SDL_DestroyRenderer(s_ren);
     SDL_DestroyWindow(s_win);
     SDL_Quit();

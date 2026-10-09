@@ -80,6 +80,19 @@ bool cyc_ui_menu_open(void);
 void cyc_ui_toggle_menu(void);
 /* Menu navigation (RecompRuntimeUiInput values). */
 void cyc_ui_nav(int input, bool repeat);
+/* Framebuffer menus share the host's live settings and persistence. */
+bool cyc_ui_setting_get(const char *key, int *value);
+bool cyc_ui_setting_set(const char *key, int value);
+void cyc_ui_save_settings(void);
+void cyc_ui_quit(void);
+bool cyc_ui_load_save_state(void);
+/* Dedicated read-only achievement browser, independent of settings. */
+void cyc_ui_open_achievements(void);
+bool cyc_ui_achievements_is_open(void);
+void cyc_ui_achievements_nav(int input);
+void cyc_ui_open_controls(void);
+bool cyc_ui_controls_is_open(void);
+void cyc_ui_controls_nav(int input);
 /* The toast (NULL, NULL clears it). */
 void cyc_ui_set_toast(const char *title, const char *body);
 /* Queued, independent lower-right offline achievement notification. */

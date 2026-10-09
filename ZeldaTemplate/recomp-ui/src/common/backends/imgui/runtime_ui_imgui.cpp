@@ -11,6 +11,11 @@
 #include <cstring>
 
 static void *kickle_background, *kickle_logo;
+static void *kickle_badges[23][2];
+extern "C" void recomp_runtime_ui_set_achievement_badge(int index, int unlocked, void *texture) {
+    if (index >= 0 && index < 23 && unlocked >= 0 && unlocked < 2)
+        kickle_badges[index][unlocked] = texture;
+}
 extern "C" void recomp_runtime_ui_set_artwork(void *background, void *logo) {
     kickle_background=background; kickle_logo=logo;
 }
@@ -95,6 +100,14 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
 
         const bool enabled = recomp_runtime_ui_item_enabled(ui, item) != 0;
         const bool achievement = item->key && !std::strncmp(item->key,"kickle.achievement.",19);
+        int badge_index = -1, unlocked = 0;
+        if (achievement) {
+            std::sscanf(item->key + 19, "%d", &badge_index);
+            recomp_runtime_ui_current_value(ui, item, &unlocked);
+        }
+        void *badge = badge_index >= 0 && badge_index < 23 ? kickle_badges[badge_index][unlocked != 0] : nullptr;
+        const float badge_size = badge ? 48.0f : 0.0f;
+        const float badge_space = badge ? badge_size + theme.spacing_md : 0.0f;
         const bool selected = ui->in_section && index == ui->row_index;
         char value[128];
         value_text(ui, item, value, sizeof(value));
@@ -102,10 +115,10 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
         ImGui::PushID(static_cast<int>(index));
         if (!enabled) ImGui::BeginDisabled();
         const ImVec2 start = ImGui::GetCursorScreenPos();
-        const float wrap_w=std::max(80.f,ImGui::GetContentRegionAvail().x-theme.spacing_md*2);
+        const float wrap_w=std::max(80.f,ImGui::GetContentRegionAvail().x-theme.spacing_md*2-badge_space);
         const float desc_h=item->description && item->description[0] ?
             ImGui::CalcTextSize(item->description,nullptr,false,wrap_w).y : 0.f;
-        const float row_h=std::max(theme.row_height,theme.spacing_sm*2+ImGui::GetTextLineHeight()+desc_h+4);
+        const float row_h=std::max(std::max(theme.row_height, badge_size + theme.spacing_sm*2),theme.spacing_sm*2+ImGui::GetTextLineHeight()+desc_h+4);
         const float step_button_w =
             touch_friendly ? std::max(76.0f, row_h * 0.90f) : 38.0f;
         const float step_gap = touch_friendly ? 12.0f : 6.0f;
@@ -134,11 +147,15 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
         if(selected && moved) ImGui::SetScrollHereY(.5f);
 
         ImDrawList *draw = ImGui::GetWindowDrawList();
+        if (badge) {
+            const ImVec2 at(start.x + theme.spacing_md, start.y + (row_h - badge_size) * .5f);
+            draw->AddImage((ImTextureID)(intptr_t)badge, at, ImVec2(at.x + badge_size, at.y + badge_size));
+        }
         const ImVec2 end = ImGui::GetItemRectMax();
         const ImVec2 next = ImGui::GetCursorScreenPos();
         const ImU32 label_color = u32(enabled ? theme.text : theme.text_muted,
                                       enabled ? 1.0f : 0.65f);
-        draw->AddText(ImVec2(start.x + theme.spacing_md,
+        draw->AddText(ImVec2(start.x + theme.spacing_md + badge_space,
                             start.y + theme.spacing_sm),
                       label_color, item->label ? item->label : "");
         const bool stepped_value = item->type == RECOMP_RUNTIME_UI_INT;
@@ -154,7 +171,7 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
                           value);
         }
         if (item->description && item->description[0]) {
-            draw->AddText(ImGui::GetFont(),ImGui::GetFontSize(),ImVec2(start.x + theme.spacing_md,
+            draw->AddText(ImGui::GetFont(),ImGui::GetFontSize(),ImVec2(start.x + theme.spacing_md + badge_space,
                                 start.y + theme.spacing_sm +
                                     ImGui::GetTextLineHeight() + 2.0f),
                           u32(achievement ? theme.text : theme.text_muted), item->description,nullptr,wrap_w);
@@ -301,7 +318,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
     LauncherTheme theme = launcher_theme_by_name(ui->config.theme);
     const bool kickle = ui->config.theme && std::strcmp(ui->config.theme,"kickle")==0;
     if(kickle) {
-        theme.panel=lng_rgba(.025f,.09f,.18f,.94f); theme.control=lng_rgba(.08f,.25f,.43f,1);
+        theme.background=lng_rgba(.025f,.045f,.085f,1); theme.text=lng_rgba(.96f,.98f,1,1); theme.text_muted=lng_rgba(.72f,.79f,.88f,1); theme.panel=lng_rgba(.045f,.075f,.12f,1); theme.control=lng_rgba(.08f,.25f,.43f,1);
         theme.accent=lng_rgba(.3f,.75f,.95f,1); theme.accent2=lng_rgba(.65f,.94f,1,1);
         theme.focus_ring=lng_rgba(1,.82f,.2f,1); theme.radius_lg=18; theme.row_height=54;
     }
@@ -315,9 +332,10 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
     if(kickle && kickle_background) ImGui::GetBackgroundDrawList()->AddImage((ImTextureID)(intptr_t)kickle_background,ImVec2(0,0),display);
     ImGui::GetBackgroundDrawList()->AddRectFilled(
         ImVec2(0.0f, 0.0f), display,
-        IM_COL32(0, 0, 0, static_cast<int>(255.0f * (kickle ? .08f : ui->dim) + 0.5f)));
+        IM_COL32(0, 0, 0, static_cast<int>(255.0f * (kickle ? .40f : ui->dim) + 0.5f)));
 
     if (ui->quit_confirmation) {
+        const bool achievements=ui->quit_confirmation->key && !strcmp(ui->quit_confirmation->key,"kickle.reset_achievements");
         const bool resetting=ui->quit_confirmation->key && !strcmp(ui->quit_confirmation->key,"kickle.reset_title");
         push_runtime_style(theme, touch_friendly, 1.0f);
         const float prompt_w = std::min(display.x - 32.0f, 620.0f);
@@ -326,10 +344,10 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         if (ImGui::Begin("Confirm Exit##runtime-quit", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavInputs)) {
-            ImGui::SetWindowFontScale(1.5f);
-            ImGui::TextUnformatted(resetting ? "Reset to Title Screen?" : "Quit to Desktop?");
+            ImGui::SetWindowFontScale(kickle ? 1.0f : 1.5f);
+            ImGui::TextUnformatted(achievements ? "Reset Achievements?" : resetting ? "Reset to Title Screen?" : "Quit to Desktop?");
             ImGui::Spacing();
-            ImGui::TextWrapped(resetting ? "End the current run and return to the title screen? Unsaved progress will be lost." : "Are you sure you want to exit the game?");
+            ImGui::TextWrapped(achievements ? "Erase all local achievements and attempt progress? This cannot be undone." : resetting ? "End the current run and return to the title screen? Unsaved progress will be lost." : "Are you sure you want to exit the game?");
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
             const float button_w=(ImGui::GetContentRegionAvail().x-16.0f)*.5f;
             for (int i=0;i<2;++i) {
@@ -364,7 +382,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
     const float margin = touch_friendly
         ? std::max(20.0f, short_axis * 0.025f)
         : 24.0f;
-    const float max_width = kickle ? (display.x>=1100 ? display.x*.53f : display.x*.90f) : touch_friendly ? display.x : 780.0f;
+    const float max_width = kickle ? (display.x>=1100 ? display.x*.70f : display.x*.90f) : touch_friendly ? display.x : 780.0f;
     const float max_height = kickle ? display.y*.92f : touch_friendly ? display.y : 680.0f;
     const float width = display.x - margin * 2.0f < max_width
                             ? display.x - margin * 2.0f
@@ -373,7 +391,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
                              ? display.y - margin * 2.0f
                              : max_height;
     const bool wide = width >= (touch_friendly ? 900.0f : 640.0f);
-    ImGui::SetNextWindowPos(ImVec2(display.x * (kickle && display.x>=1100 ? .715f : .5f), display.y * 0.5f),
+    ImGui::SetNextWindowPos(ImVec2(display.x * (kickle && display.x>=1100 ? .5f : .5f), display.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
 
@@ -388,9 +406,9 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
                                    (ui->editing_text ? 0 : ImGuiWindowFlags_NoNavInputs);
     if (ImGui::Begin("##recomp-runtime-ui", nullptr, flags)) {
         if(kickle) {
-            ImGui::SetWindowFontScale(1.25f);
+            ImGui::SetWindowFontScale(std::clamp(display.y / 900.f, .85f, 1.35f));
             if(kickle_logo) {
-                float lw=std::min(width-40.f,300.f);
+                float lw=std::min(width-40.f,180.f);
                 ImGui::SetCursorPosX((width-lw)*.5f);
                 ImGui::Image((ImTextureID)(intptr_t)kickle_logo,ImVec2(lw,lw*9.f/16.f));
             }
@@ -429,7 +447,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         if (wide) {
             const float sidebar_w = touch_friendly
                 ? std::clamp(width * 0.20f, 280.0f, 520.0f)
-                : 190.0f;
+                : std::clamp(width * .27f, 200.f, 290.f);
             ImGui::BeginChild("##sections", ImVec2(sidebar_w, content_h), true);
             draw_sections(ui, theme, false);
             ImGui::EndChild();
@@ -478,7 +496,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         }
         ImGui::SameLine();
         const char *close_label = "Resume";
-        if(kickle) { ImGui::TextDisabled("v0.0.3"); ImGui::SameLine(); }
+        if(kickle) { ImGui::TextDisabled("v0.0.4"); ImGui::SameLine(); }
         const float close_w = touch_friendly
             ? std::max(320.0f, ImGui::CalcTextSize(close_label).x +
                                    theme.spacing_lg * 2.0f)
